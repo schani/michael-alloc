@@ -1,3 +1,28 @@
+/*
+ * This is an implementation of a lock-free queue, as described in
+ *
+ * Simple, Fast, and Practical Non-Blocking and Blocking
+ *   Concurrent Queue Algorithms
+ * Maged M. Michael, Michael L. Scott
+ * 1995
+ *
+ * A few slight modifications have been made:
+ *
+ * We use hazard pointers to rule out the ABA problem, instead of the
+ * counter as in the paper.
+ *
+ * Memory management of the queue entries is done by the caller, not
+ * by the queue implementation.  This implies that the dequeue
+ * function must return the queue entry, not just the data.
+ * Therefore, the dummy entry must never be returned.  We do this by
+ * re-enqueuing the dummy entry after we dequeue it and then retrying
+ * the dequeue.
+ */
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/mman.h>
+
 #include "hazard.h"
 #include "atomic.h"
 
@@ -109,23 +134,51 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 	return head;
 }
 
+/* Test code */
+
 #define NUM_ENTRIES	32768
 #define NUM_ITERATIONS	100000000
 
+typedef struct _TableEntry TableEntry;
+
 typedef struct {
 	MonoLockFreeQueueNode node;
-	gint32 in_queue;
-} Entry;
+	TableEntry *table_entry;
+} QueueEntry;
+
+struct _TableEntry {
+	gboolean mmap;
+	QueueEntry *queue_entry;
+};
 
 static MonoLockFreeQueue queue;
-static Entry entries [NUM_ENTRIES];
+static TableEntry entries [NUM_ENTRIES];
+
+static QueueEntry*
+alloc_entry (TableEntry *e)
+{
+	if (e->mmap)
+		return mmap (NULL, getpagesize (), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	else
+		return malloc (sizeof (QueueEntry));
+}
+
+static void
+free_entry_memory (QueueEntry *qe, gboolean mmap)
+{
+	if (mmap)
+		munmap (qe, getpagesize ());
+	else
+		free (qe);
+}
 
 static void
 free_entry (void *data)
 {
-	Entry *e = data;
-	if (InterlockedCompareExchange (&e->in_queue, 0, 1) != 1)
-		g_assert_not_reached ();
+	QueueEntry *e = data;
+	g_assert (e->table_entry->queue_entry == e);
+	e->table_entry->queue_entry = NULL;
+	free_entry_memory (e, e->table_entry->mmap);
 }
 
 static void*
@@ -139,15 +192,29 @@ thread_func (void *data)
 
 	index = 0;
 	for (i = 0; i < NUM_ITERATIONS; ++i) {
-		Entry *e = &entries [index];
+		TableEntry *e = &entries [index];
 
-		if (e->in_queue) {
-			e = (Entry*)mono_lock_free_queue_dequeue (&queue);
-			if (e)
-				mono_thread_hazardous_free_or_queue (e, free_entry);
+		if (e->queue_entry) {
+			QueueEntry *qe = (QueueEntry*)mono_lock_free_queue_dequeue (&queue);
+			if (qe) {
+				/*
+				 * Calling free_entry() directly here
+				 * effectively disables hazardous
+				 * pointers.  The test will then crash
+				 * sooner or later.
+				 */
+				mono_thread_hazardous_free_or_queue (qe, free_entry);
+				//free_entry (qe);
+			}
 		} else {
-			if (InterlockedCompareExchange (&e->in_queue, 1, 0) == 0)
-				mono_lock_free_queue_enqueue (&queue, &e->node);
+			QueueEntry *qe = alloc_entry (e);
+			qe->table_entry = e;
+			if (InterlockedCompareExchangePointer ((gpointer volatile*)&e->queue_entry, qe, NULL) == NULL) {
+				mono_lock_free_queue_enqueue (&queue, &qe->node);
+			} else {
+				qe->table_entry = NULL;
+				free_entry_memory (qe, e->mmap);
+			}
 		}
 
 		index += increment;
@@ -162,7 +229,7 @@ int
 main (void)
 {
 	pthread_t thread1, thread2, thread3, thread4;
-	Entry *e;
+	QueueEntry *qe;
 	int i;
 
 	mono_thread_hazardous_init ();
@@ -170,6 +237,9 @@ main (void)
 	mono_thread_attach ();
 
 	mono_lock_free_queue_init (&queue);
+
+	for (i = 0; i < NUM_ENTRIES; i += 97)
+		entries [i].mmap = TRUE;
 
 	pthread_create (&thread1, NULL, thread_func, (void*)1);
 	pthread_create (&thread2, NULL, thread_func, (void*)2);
@@ -183,13 +253,11 @@ main (void)
 
 	mono_thread_hazardous_try_free_all ();
 
-	while ((e = (Entry*)mono_lock_free_queue_dequeue (&queue))) {
-		g_assert (e->in_queue);
-		e->in_queue = 0;
-	}
+	while ((qe = (QueueEntry*)mono_lock_free_queue_dequeue (&queue)))
+		free_entry (qe);
 
 	for (i = 0; i < NUM_ENTRIES; ++i)
-		g_assert (!entries [i].in_queue);
+		g_assert (!entries [i].queue_entry);
 
 	mono_thread_hazardous_print_stats ();
 
