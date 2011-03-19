@@ -25,4 +25,11 @@ MonoThreadHazardPointers* mono_hazard_pointer_get (void);
 		(hp)->hazard_pointers [(i)] = NULL; \
 	} while (0)
 
+gpointer mono_thread_hazardous_load (gpointer volatile *pp, MonoThreadHazardPointers *hp, int hazard_index);
+
+void mono_thread_attach (void);
+
+void mono_thread_hazardous_init (void);
+void mono_thread_hazardous_print_stats (void);
+
 #endif
