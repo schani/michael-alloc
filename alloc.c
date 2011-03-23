@@ -114,7 +114,7 @@ desc_alloc (void)
 
 			mono_memory_write_barrier ();
 
-			success = (InterlockedCompareExchangePointer ((gpointer * volatile)&desc_avail, desc, NULL) == NULL);
+			success = (InterlockedCompareExchangePointer ((gpointer * volatile)&desc_avail, desc->next, NULL) == NULL);
 
 			if (!success)
 				mono_sgen_free_os_memory (desc, desc_size * NUM_DESC_BATCH);
@@ -385,25 +385,27 @@ alloc_from_new_sb (ProcHeap *heap)
 	}
 }
 
-static SizeClass test_sc_64;
-static ProcHeap test_heap_64;
+#define TEST_SIZE	64
+
+static SizeClass test_sc;
+static ProcHeap test_heap;
 
 static void
 init_heap (void)
 {
-	mono_lock_free_queue_init (&test_sc_64.partial);
-	test_sc_64.slot_size = 64;
-	test_heap_64.sc = &test_sc_64;
+	mono_lock_free_queue_init (&test_sc.partial);
+	test_sc.slot_size = TEST_SIZE;
+	test_heap.sc = &test_sc;
 }
 
 static ProcHeap*
 find_heap (size_t size)
 {
-	g_assert (size <= 64);
+	g_assert (size <= TEST_SIZE);
 
-	g_assert (test_heap_64.sc == &test_sc_64);
+	g_assert (test_heap.sc == &test_sc);
 
-	return &test_heap_64;
+	return &test_heap;
 }
 
 gpointer
@@ -481,10 +483,32 @@ mono_lock_free_free (gpointer ptr, size_t size)
 
 #if 1
 
+#define NUM_ENTRIES	32768
+#define NUM_ITERATIONS	100000000
+
+static gpointer entries [NUM_ENTRIES];
+
+static void*
+thread_func (void *data)
+{
+	int increment = (int)(long)data;
+	int i;
+	gpointer p;
+
+	for (i = 0; i < 1000000; ++i) {
+		p = mono_lock_free_alloc (TEST_SIZE);
+		g_assert (p);
+		mono_lock_free_free (p, TEST_SIZE);
+	}
+
+	return NULL;
+}
+
 int
 main (void)
 {
-	gpointer p;
+	pthread_t thread1, thread2, thread3, thread4;
+	int i, index;
 
 	mono_thread_hazardous_init ();
 
@@ -492,9 +516,37 @@ main (void)
 
 	init_heap ();
 
-	p = mono_lock_free_alloc (64);
-	g_assert (p);
-	mono_lock_free_free (p, 64);
+	/*
+	pthread_create (&thread1, NULL, thread_func, (void*)1);
+	pthread_create (&thread2, NULL, thread_func, (void*)2);
+	pthread_create (&thread3, NULL, thread_func, (void*)3);
+	pthread_create (&thread4, NULL, thread_func, (void*)5);
+
+	pthread_join (thread1, NULL);
+	pthread_join (thread2, NULL);
+	pthread_join (thread3, NULL);
+	pthread_join (thread4, NULL);
+	*/
+
+	index = 0;
+	for (i = 0; i < NUM_ITERATIONS; ++i) {
+		gpointer p = entries [index];
+		if (p) {
+			g_assert (*(int*)p == index);
+			mono_lock_free_free (p, TEST_SIZE);
+			entries [index] = NULL;
+		} else {
+			p = mono_lock_free_alloc (TEST_SIZE);
+			*(int*)p = index;
+			entries [index] = p;
+		}
+
+		++index;
+		if (index >= NUM_ENTRIES)
+			index -= NUM_ENTRIES;
+	}
+
+	mono_thread_hazardous_try_free_all ();
 
 	return 0;
 }
