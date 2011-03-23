@@ -17,6 +17,7 @@ MonoThreadHazardPointers* mono_hazard_pointer_get (void);
 
 #define mono_hazard_pointer_set(hp,i,v)	\
 	do { g_assert ((i) == 0 || (i) == 1); \
+		g_assert (!(hp)->hazard_pointers [(i)]); \
 		(hp)->hazard_pointers [(i)] = (v); \
 		mono_memory_write_barrier (); \
 	} while (0)

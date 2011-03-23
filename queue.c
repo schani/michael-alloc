@@ -23,6 +23,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
+#include "mono-membar.h"
 #include "hazard.h"
 #include "atomic.h"
 
@@ -40,6 +41,14 @@ mono_lock_free_queue_enqueue (MonoLockFreeQueue *q, MonoLockFreeQueueNode *node)
 {
 	MonoThreadHazardPointers *hp = mono_hazard_pointer_get ();
 	MonoLockFreeQueueNode *tail;
+
+#ifdef QUEUE_DEBUG
+	if (node != &q->dummy) {
+		g_assert (!node->in_queue);
+		node->in_queue = TRUE;
+		mono_memory_write_barrier ();
+	}
+#endif
 
 	node->next = NULL;
 	for (;;) {
@@ -60,9 +69,10 @@ mono_lock_free_queue_enqueue (MonoLockFreeQueue *q, MonoLockFreeQueueNode *node)
 			} else {
 				/* Try to advance tail */
 				InterlockedCompareExchangePointer ((gpointer volatile*)&q->tail, next, tail);
-				mono_hazard_pointer_clear (hp, 0);
 			}
 		}
+
+		mono_hazard_pointer_clear (hp, 0);
 	}
 
 	/* Try to advance tail */
@@ -96,8 +106,9 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 					return NULL;
 				}
 				/* Try to advance tail */
-				InterlockedCompareExchangePointer ((gpointer volatile*)&q->tail, tail, next);
+				InterlockedCompareExchangePointer ((gpointer volatile*)&q->tail, next, tail);
 			} else {
+				g_assert (next);
 				/* Try to dequeue head */
 				if (InterlockedCompareExchangePointer ((gpointer volatile*)&q->head, next, head) == head)
 					break;
@@ -119,6 +130,12 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 		mono_lock_free_queue_enqueue (q, &q->dummy);
 		goto retry;
 	}
+
+#if QUEUE_DEBUG
+	g_assert (head->in_queue);
+	head->in_queue = FALSE;
+	mono_memory_write_barrier ();
+#endif
 
 	/* The caller must hazardously free the node. */
 	return head;
