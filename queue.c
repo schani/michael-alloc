@@ -26,17 +26,7 @@
 #include "hazard.h"
 #include "atomic.h"
 
-typedef struct _MonoLockFreeQueueNode MonoLockFreeQueueNode;
-
-struct _MonoLockFreeQueueNode {
-	MonoLockFreeQueueNode *next;
-};
-
-typedef struct {
-	MonoLockFreeQueueNode *head;
-	MonoLockFreeQueueNode *tail;
-	MonoLockFreeQueueNode dummy;
-} MonoLockFreeQueue;
+#include "queue.h"
 
 void
 mono_lock_free_queue_init (MonoLockFreeQueue *q)
@@ -135,6 +125,8 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 }
 
 /* Test code */
+
+#if 0
 
 #define NUM_ENTRIES	32768
 #define NUM_ITERATIONS	100000000
@@ -263,3 +255,5 @@ main (void)
 
 	return 0;
 }
+
+#endif

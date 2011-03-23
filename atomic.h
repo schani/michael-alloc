@@ -102,6 +102,18 @@ static inline gpointer InterlockedCompareExchangePointer(volatile gpointer *dest
 	return(old);
 }
 
+#ifdef __x86_64__
+static inline gint64 atomic64_cmpxchg(volatile gint64 *v, gint64 old, gint64 new)
+{
+	return (gint64) InterlockedCompareExchangePointer ((volatile gpointer*)v, (gpointer)old, (gpointer)new);
+}
+
+static inline gint64 atomic64_read (const gint64 *v)
+{
+	return *v;
+}
+#endif
+
 static inline gint32 InterlockedIncrement(volatile gint32 *val)
 {
 	gint32 tmp;

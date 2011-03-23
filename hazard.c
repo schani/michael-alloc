@@ -3,9 +3,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
-#include <sys/mman.h>
 
 #include "mono-membar.h"
+#include "mono-mmap.h"
 #include "hazard.h"
 
 #define mono_pagesize getpagesize
@@ -58,22 +58,6 @@ static void
 mono_gc_free_fixed (void *ptr)
 {
 	free (ptr);
-}
-
-#define mono_mprotect	mprotect
-#define MONO_MMAP_NONE	PROT_NONE
-#define MONO_MMAP_READ	PROT_READ
-#define MONO_MMAP_WRITE	PROT_WRITE
-
-static void*
-mono_valloc (void *addr, size_t len, int prot)
-{
-	addr = mmap (addr, len, prot, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
-	if (addr == (void*)-1) {
-		fprintf (stderr, "mmap error: %m\n");
-		return NULL;
-	}
-	return addr;
 }
 
 /*
