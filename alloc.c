@@ -492,13 +492,32 @@ static void*
 thread_func (void *data)
 {
 	int increment = (int)(long)data;
-	int i;
-	gpointer p;
+	int i, index;
 
-	for (i = 0; i < 1000000; ++i) {
-		p = mono_lock_free_alloc (TEST_SIZE);
-		g_assert (p);
-		mono_lock_free_free (p, TEST_SIZE);
+	mono_thread_attach ();
+
+	index = 0;
+	for (i = 0; i < NUM_ITERATIONS; ++i) {
+		gpointer p;
+	retry:
+		p = entries [index];
+		if (p) {
+			if (InterlockedCompareExchangePointer ((gpointer * volatile)&entries [index], NULL, p) != p)
+				goto retry;
+			g_assert (*(int*)p == index);
+			mono_lock_free_free (p, TEST_SIZE);
+		} else {
+			p = mono_lock_free_alloc (TEST_SIZE);
+			*(int*)p = index;
+			if (InterlockedCompareExchangePointer ((gpointer * volatile)&entries [index], p, NULL) != NULL) {
+				mono_lock_free_free (p, TEST_SIZE);
+				goto retry;
+			}
+		}
+
+		index += increment;
+		if (index >= NUM_ENTRIES)
+			index -= NUM_ENTRIES;
 	}
 
 	return NULL;
@@ -508,7 +527,6 @@ int
 main (void)
 {
 	pthread_t thread1, thread2, thread3, thread4;
-	int i, index;
 
 	mono_thread_hazardous_init ();
 
@@ -516,7 +534,6 @@ main (void)
 
 	init_heap ();
 
-	/*
 	pthread_create (&thread1, NULL, thread_func, (void*)1);
 	pthread_create (&thread2, NULL, thread_func, (void*)2);
 	pthread_create (&thread3, NULL, thread_func, (void*)3);
@@ -526,25 +543,6 @@ main (void)
 	pthread_join (thread2, NULL);
 	pthread_join (thread3, NULL);
 	pthread_join (thread4, NULL);
-	*/
-
-	index = 0;
-	for (i = 0; i < NUM_ITERATIONS; ++i) {
-		gpointer p = entries [index];
-		if (p) {
-			g_assert (*(int*)p == index);
-			mono_lock_free_free (p, TEST_SIZE);
-			entries [index] = NULL;
-		} else {
-			p = mono_lock_free_alloc (TEST_SIZE);
-			*(int*)p = index;
-			entries [index] = p;
-		}
-
-		++index;
-		if (index >= NUM_ENTRIES)
-			index -= NUM_ENTRIES;
-	}
 
 	mono_thread_hazardous_try_free_all ();
 
