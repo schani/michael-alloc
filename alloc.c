@@ -108,7 +108,7 @@ desc_alloc (void)
 			d = desc;
 			for (i = 0; i < NUM_DESC_BATCH; ++i) {
 				Descriptor *next = (i == (NUM_DESC_BATCH - 1)) ? desc : (Descriptor*)((char*)desc + ((i + 1) * desc_size));
-				*(Descriptor**)d = next;
+				d->next = next;
 				d = next;
 			}
 
