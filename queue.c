@@ -102,7 +102,12 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 				if (next == NULL) {
 					/* Queue is empty */
 					mono_hazard_pointer_clear (hp, 0);
-					g_assert (head == &q->dummy);
+					/*
+					 * We sometimes dequeue the
+					 * dummy, so this does not
+					 * necessarily hold.
+					 */
+					//g_assert (head == &q->dummy);
 					return NULL;
 				}
 				/* Try to advance tail */
