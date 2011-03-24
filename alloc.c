@@ -93,7 +93,7 @@ desc_alloc (void)
 	for (;;) {
 		gboolean success;
 
-		desc = mono_thread_hazardous_load ((gpointer * volatile)&desc_avail, hp, 0);
+		desc = mono_thread_hazardous_load ((gpointer * volatile)&desc_avail, hp, 1);
 		if (desc) {
 			Descriptor *next = desc->next;
 			success = (InterlockedCompareExchangePointer ((gpointer * volatile)&desc_avail, next, desc) == desc);
@@ -120,7 +120,7 @@ desc_alloc (void)
 				mono_sgen_free_os_memory (desc, desc_size * NUM_DESC_BATCH);
 		}
 
-		mono_hazard_pointer_clear (hp, 0);
+		mono_hazard_pointer_clear (hp, 1);
 
 		if (success)
 			break;
