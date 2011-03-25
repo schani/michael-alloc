@@ -107,7 +107,7 @@ desc_alloc (void)
 			/* Organize into linked list. */
 			d = desc;
 			for (i = 0; i < NUM_DESC_BATCH; ++i) {
-				Descriptor *next = (i == (NUM_DESC_BATCH - 1)) ? desc : (Descriptor*)((char*)desc + ((i + 1) * desc_size));
+				Descriptor *next = (i == (NUM_DESC_BATCH - 1)) ? NULL : (Descriptor*)((char*)desc + ((i + 1) * desc_size));
 				d->next = next;
 				d = next;
 			}
@@ -353,7 +353,7 @@ alloc_from_new_sb (ProcHeap *heap)
 	desc->sb = alloc_sb (desc);
 
 	slot_size = desc->slot_size = heap->sc->slot_size;
-	count = SB_SIZE / slot_size;
+	count = SB_USABLE_SIZE / slot_size;
 
 	/* Organize blocks into linked list. */
 	for (i = 1; i < count - 1; ++i)
