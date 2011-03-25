@@ -275,6 +275,7 @@ alloc_from_active (ProcHeap *heap)
 		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
 
 		next = *(unsigned int*)addr;
+		g_assert (next < SB_USABLE_SIZE / desc->slot_size);
 		new_anchor.data.avail = next;
 		++new_anchor.data.tag;
 
@@ -334,6 +335,7 @@ alloc_from_partial (ProcHeap *heap)
 		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
 
 		next = *(unsigned int*)addr;
+		g_assert (next < SB_USABLE_SIZE / desc->slot_size);
 		new_anchor.data.avail = next;
 		++new_anchor.data.tag;
 	} while (atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) != old_anchor.value);
@@ -452,11 +454,13 @@ mono_lock_free_free (gpointer ptr, size_t size)
 
 	desc = DESCRIPTOR_FOR_ADDR (ptr);
 	sb = desc->sb;
+	g_assert (SB_HEADER_FOR_ADDR (ptr) == SB_HEADER_FOR_ADDR (sb));
 
 	do {
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
 		*(unsigned int*)ptr = old_anchor.data.avail;
 		new_anchor.data.avail = ((char*)ptr - (char*)sb) / desc->slot_size;
+		g_assert (new_anchor.data.avail < SB_USABLE_SIZE / desc->slot_size);
 
 		if (old_anchor.data.state == STATE_FULL)
 			new_anchor.data.state = STATE_PARTIAL;
