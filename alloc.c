@@ -1,4 +1,5 @@
 #include <glib.h>
+#include <unistd.h>
 
 #include "mono-mmap.h"
 #include "mono-membar.h"
@@ -483,18 +484,44 @@ mono_lock_free_free (gpointer ptr, size_t size)
 
 #if 1
 
-#define NUM_ENTRIES	32768
+#define NUM_THREADS	4
+
+typedef struct {
+	pthread_t thread;
+	int increment;
+	volatile gboolean have_attached;
+} ThreadData;
+
+static ThreadData thread_datas [NUM_THREADS];
+
+#define NUM_ENTRIES	256
 #define NUM_ITERATIONS	100000000
 
 static gpointer entries [NUM_ENTRIES];
 
-static void*
-thread_func (void *data)
+static void
+wait_for_threads_to_attach (void)
 {
-	int increment = (int)(long)data;
+	int i;
+ retry:
+	for (i = 0; i < NUM_THREADS; ++i) {
+		if (!thread_datas [i].have_attached) {
+			usleep (5000);
+			goto retry;
+		}
+	}
+}
+
+static void*
+thread_func (void *_data)
+{
+	ThreadData *data = _data;
+	int increment = data->increment;
 	int i, index;
 
 	mono_thread_attach ();
+	data->have_attached = TRUE;
+	wait_for_threads_to_attach ();
 
 	index = 0;
 	for (i = 0; i < NUM_ITERATIONS; ++i) {
@@ -507,16 +534,25 @@ thread_func (void *data)
 			g_assert (*(int*)p == index);
 			mono_lock_free_free (p, TEST_SIZE);
 		} else {
+			int j;
+
 			p = mono_lock_free_alloc (TEST_SIZE);
+
+			/*
+			for (j = 0; j < NUM_ENTRIES; ++j)
+				g_assert (entries [j] != p);
+			*/
+
 			*(int*)p = index;
 			if (InterlockedCompareExchangePointer ((gpointer * volatile)&entries [index], p, NULL) != NULL) {
+				//g_print ("immediate free %p\n", p);
 				mono_lock_free_free (p, TEST_SIZE);
 				goto retry;
 			}
 		}
 
 		index += increment;
-		if (index >= NUM_ENTRIES)
+		while (index >= NUM_ENTRIES)
 			index -= NUM_ENTRIES;
 	}
 
@@ -526,7 +562,7 @@ thread_func (void *data)
 int
 main (void)
 {
-	pthread_t thread1, thread2, thread3, thread4;
+	int i;
 
 	mono_thread_hazardous_init ();
 
@@ -534,15 +570,16 @@ main (void)
 
 	init_heap ();
 
-	pthread_create (&thread1, NULL, thread_func, (void*)1);
-	pthread_create (&thread2, NULL, thread_func, (void*)2);
-	pthread_create (&thread3, NULL, thread_func, (void*)3);
-	pthread_create (&thread4, NULL, thread_func, (void*)5);
+	thread_datas [0].increment = 1;
+	thread_datas [1].increment = 2;
+	thread_datas [2].increment = 3;
+	thread_datas [3].increment = 5;
 
-	pthread_join (thread1, NULL);
-	pthread_join (thread2, NULL);
-	pthread_join (thread3, NULL);
-	pthread_join (thread4, NULL);
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
+
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_join (thread_datas [i].thread, NULL);
 
 	mono_thread_hazardous_try_free_all ();
 
