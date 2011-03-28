@@ -279,6 +279,8 @@ alloc_from_active (ProcHeap *heap)
 
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
 
+		mono_memory_read_barrier ();
+
 		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
 
 		next = *(unsigned int*)addr;
