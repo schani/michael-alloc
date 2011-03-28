@@ -1,5 +1,6 @@
 #include <glib.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include "mono-mmap.h"
 #include "mono-membar.h"
@@ -502,11 +503,89 @@ mono_lock_free_free (gpointer ptr, size_t size)
 	}
 }
 
+#ifdef LAST_BYTE_DEBUG
+static void
+descriptor_check_consistency (Descriptor *desc, int more_credits)
+{
+	int count = desc->anchor.data.count + more_credits;
+	int max_count = SB_USABLE_SIZE / desc->slot_size;
+	gboolean linked [max_count];
+	int i;
+	unsigned int index;
+	Descriptor *avail;
+
+	for (avail = desc_avail; avail; avail = avail->next)
+		g_assert (desc != avail);
+
+	g_assert (desc->slot_size == desc->heap->sc->slot_size);
+
+	switch (desc->anchor.data.state) {
+	case STATE_ACTIVE:
+		g_assert (count <= max_count);
+		break;
+	case STATE_FULL:
+		g_assert (count == 0);
+		break;
+	case STATE_PARTIAL:
+		g_assert (count < max_count);
+		break;
+	case STATE_EMPTY:
+		g_assert (count == max_count);
+		break;
+	default:
+		g_assert_not_reached ();
+	}
+
+	for (i = 0; i < max_count; ++i)
+		linked [i] = FALSE;
+
+	index = desc->anchor.data.avail;
+	for (i = 0; i < count; ++i) {
+		gpointer addr = (char*)desc->sb + index * desc->slot_size;
+		g_assert (index >= 0 && index < max_count);
+		g_assert (!linked [index]);
+		g_assert (!LAST_BYTE (addr, desc->slot_size));
+		linked [index] = TRUE;
+		index = *(unsigned int*)addr;
+	}
+
+	for (i = 0; i < max_count; ++i) {
+		gpointer addr = (char*)desc->sb + i * desc->slot_size;
+		if (linked [i])
+			continue;
+		g_assert (LAST_BYTE (addr, desc->slot_size));
+	}
+}
+
+static void
+heap_check_consistency (ProcHeap *heap)
+{
+	Descriptor *active = ACTIVE_PTR (heap->active);
+	Descriptor *desc;
+	if (active) {
+		int credits = ACTIVE_CREDITS (heap->active);
+		g_assert (active->anchor.data.state == STATE_ACTIVE);
+		descriptor_check_consistency (active, credits + 1);
+	}
+	if (heap->partial) {
+		g_assert (heap->partial->anchor.data.state == STATE_PARTIAL);
+		descriptor_check_consistency (heap->partial, 0);
+	}
+	while ((desc = (Descriptor*)mono_lock_free_queue_dequeue (&heap->sc->partial))) {
+		g_assert (desc->anchor.data.state == STATE_PARTIAL || desc->anchor.data.state == STATE_EMPTY);
+		descriptor_check_consistency (desc, 0);
+	}
+
+	g_print ("heap consistent\n");
+	exit (0);
+}
+#endif
+
 /* Test code */
 
 #if 1
 
-#define NUM_THREADS	4
+#define NUM_THREADS	2
 
 typedef struct {
 	pthread_t thread;
@@ -604,6 +683,8 @@ main (void)
 		pthread_join (thread_datas [i].thread, NULL);
 
 	mono_thread_hazardous_try_free_all ();
+
+	heap_check_consistency (&test_heap);
 
 	return 0;
 }
