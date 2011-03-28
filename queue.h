@@ -17,7 +17,7 @@ typedef struct {
 	gint32 in_use;
 } MonoLockFreeQueueDummy;
 
-#define MONO_LOCK_FREE_QUEUE_NUM_DUMMIES	1
+#define MONO_LOCK_FREE_QUEUE_NUM_DUMMIES	2
 
 typedef struct {
 	MonoLockFreeQueueNode *head;

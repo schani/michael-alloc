@@ -135,7 +135,6 @@ try_reenqueue_dummy (MonoLockFreeQueue *q)
 		return FALSE;
 
 	if (InterlockedCompareExchange (&q->has_dummy, 1, 0) != 0) {
-		g_assert_not_reached ();
 		dummy->in_use = 0;
 		return FALSE;
 	}
