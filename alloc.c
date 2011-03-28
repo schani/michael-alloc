@@ -8,6 +8,12 @@
 #include "queue.h"
 #include "sgen-gc.h"
 
+#define LAST_BYTE_DEBUG
+
+#ifdef LAST_BYTE_DEBUG
+#define LAST_BYTE(p,s)	(*((unsigned char*)p + (s) - 1))
+#endif
+
 enum {
 	STATE_ACTIVE,
 	STATE_FULL,
@@ -415,6 +421,7 @@ gpointer
 mono_lock_free_alloc (size_t size)
 {
 	ProcHeap *heap;
+	gpointer addr;
 
 	if (size > MAX_SMALL_SIZE)
 		return mono_sgen_alloc_os_memory (size, TRUE);
@@ -423,20 +430,26 @@ mono_lock_free_alloc (size_t size)
 	g_assert (heap);
 
 	for (;;) {
-		gpointer addr;
 
 		addr = alloc_from_active (heap);
 		if (addr)
-			return addr;
+			break;
 
 		addr = alloc_from_partial (heap);
 		if (addr)
-			return addr;
+			break;
 
 		addr = alloc_from_new_sb (heap);
 		if (addr)
-			return addr;
+			break;
 	}
+
+#ifdef LAST_BYTE_DEBUG
+	g_assert (!LAST_BYTE (addr, heap->sc->slot_size));
+	LAST_BYTE (addr, heap->sc->slot_size) = 1;
+#endif
+
+	return addr;
 }
 
 void
@@ -455,6 +468,11 @@ mono_lock_free_free (gpointer ptr, size_t size)
 	desc = DESCRIPTOR_FOR_ADDR (ptr);
 	sb = desc->sb;
 	g_assert (SB_HEADER_FOR_ADDR (ptr) == SB_HEADER_FOR_ADDR (sb));
+
+#ifdef LAST_BYTE_DEBUG
+	g_assert (LAST_BYTE (ptr, desc->slot_size));
+	LAST_BYTE (ptr, desc->slot_size) = 0;
+#endif
 
 	do {
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
