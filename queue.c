@@ -32,8 +32,17 @@
 void
 mono_lock_free_queue_init (MonoLockFreeQueue *q)
 {
-	q->dummy.next = NULL;
-	q->head = q->tail = &q->dummy;
+	int i;
+	for (i = 0; i < MONO_LOCK_FREE_QUEUE_NUM_DUMMIES; ++i) {
+		q->dummies [i].node.next = NULL;
+		q->dummies [i].in_use = i == 0 ? 1 : 0;
+#ifdef QUEUE_DEBUG
+		q->dummies [i].node.in_queue = i == 0 ? TRUE : FALSE;
+#endif
+	}
+
+	q->head = q->tail = &q->dummies [0].node;
+	q->has_dummy = 1;
 }
 
 void
@@ -43,11 +52,9 @@ mono_lock_free_queue_enqueue (MonoLockFreeQueue *q, MonoLockFreeQueueNode *node)
 	MonoLockFreeQueueNode *tail;
 
 #ifdef QUEUE_DEBUG
-	if (node != &q->dummy) {
-		g_assert (!node->in_queue);
-		node->in_queue = TRUE;
-		mono_memory_write_barrier ();
-	}
+	g_assert (!node->in_queue);
+	node->in_queue = TRUE;
+	mono_memory_write_barrier ();
 #endif
 
 	node->next = NULL;
@@ -74,13 +81,68 @@ mono_lock_free_queue_enqueue (MonoLockFreeQueue *q, MonoLockFreeQueueNode *node)
 			}
 		}
 
+		mono_memory_write_barrier ();
 		mono_hazard_pointer_clear (hp, 0);
 	}
 
 	/* Try to advance tail */
 	InterlockedCompareExchangePointer ((gpointer volatile*)&q->tail, node, tail);
 
+	mono_memory_write_barrier ();
 	mono_hazard_pointer_clear (hp, 0);
+}
+
+static void
+free_dummy (gpointer _dummy)
+{
+	MonoLockFreeQueueDummy *dummy = _dummy;
+	g_assert (dummy->in_use);
+	dummy->in_use = 0;
+}
+
+static MonoLockFreeQueueDummy*
+get_dummy (MonoLockFreeQueue *q)
+{
+	int i;
+	for (i = 0; i < MONO_LOCK_FREE_QUEUE_NUM_DUMMIES; ++i) {
+		MonoLockFreeQueueDummy *dummy = &q->dummies [i];
+
+		if (dummy->in_use)
+			continue;
+
+		if (InterlockedCompareExchange (&dummy->in_use, 1, 0) == 0)
+			return dummy;
+	}
+	return NULL;
+}
+
+static gboolean
+is_dummy (MonoLockFreeQueue *q, MonoLockFreeQueueNode *n)
+{
+	return n >= &q->dummies [0].node && n < &q->dummies [MONO_LOCK_FREE_QUEUE_NUM_DUMMIES].node;
+}
+
+static gboolean
+try_reenqueue_dummy (MonoLockFreeQueue *q)
+{
+	MonoLockFreeQueueDummy *dummy;
+
+	if (q->has_dummy)
+		return FALSE;
+
+	dummy = get_dummy (q);
+	if (!dummy)
+		return FALSE;
+
+	if (InterlockedCompareExchange (&q->has_dummy, 1, 0) != 0) {
+		g_assert_not_reached ();
+		dummy->in_use = 0;
+		return FALSE;
+	}
+
+	mono_lock_free_queue_enqueue (q, &dummy->node);
+
+	return TRUE;
 }
 
 MonoLockFreeQueueNode*
@@ -106,12 +168,17 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 				if (next == NULL) {
 					/* Queue is empty */
 					mono_hazard_pointer_clear (hp, 0);
+
 					/*
-					 * We sometimes dequeue the
-					 * dummy, so this does not
-					 * necessarily hold.
+					 * We only continue if we
+					 * reenqueue the dummy
+					 * ourselves, so as not to
+					 * wait for threads that might
+					 * not actually run.
 					 */
-					//g_assert (head == &q->dummy);
+					if (!is_dummy (q, head) && try_reenqueue_dummy (q))
+						continue;
+
 					return NULL;
 				}
 				/* Try to advance tail */
@@ -124,27 +191,32 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 			}
 		}
 
+		mono_memory_write_barrier ();
 		mono_hazard_pointer_clear (hp, 0);
 	}
-
-	head->next = NULL;
 
 	/*
 	 * The head is dequeued now, so we know it's this thread's
 	 * responsibility to free it - no other thread can.
 	 */
+	mono_memory_write_barrier ();
 	mono_hazard_pointer_clear (hp, 0);
-
-	if (head == &q->dummy) {
-		mono_lock_free_queue_enqueue (q, &q->dummy);
-		goto retry;
-	}
 
 #if QUEUE_DEBUG
 	g_assert (head->in_queue);
 	head->in_queue = FALSE;
 	mono_memory_write_barrier ();
 #endif
+
+	if (is_dummy (q, head)) {
+		g_assert (q->has_dummy);
+		q->has_dummy = 0;
+		mono_memory_write_barrier ();
+		mono_thread_hazardous_free_or_queue (head, free_dummy);
+		if (try_reenqueue_dummy (q))
+			goto retry;
+		return NULL;
+	}
 
 	/* The caller must hazardously free the node. */
 	return head;
@@ -190,6 +262,16 @@ free_entry_memory (QueueEntry *qe, gboolean mmap)
 		g_free (qe);
 }
 
+#define NUM_THREADS	4
+
+typedef struct {
+	pthread_t thread;
+	int increment;
+	volatile gboolean have_attached;
+} ThreadData;
+
+static ThreadData thread_datas [NUM_THREADS];
+
 static void
 free_entry (void *data)
 {
@@ -199,14 +281,30 @@ free_entry (void *data)
 	free_entry_memory (e, e->table_entry->mmap);
 }
 
-static void*
-thread_func (void *data)
+static void
+wait_for_threads_to_attach (void)
 {
-	int increment = (int)(long)data;
+	int i;
+ retry:
+	for (i = 0; i < NUM_THREADS; ++i) {
+		if (!thread_datas [i].have_attached) {
+			usleep (5000);
+			goto retry;
+		}
+	}
+}
+
+static void*
+thread_func (void *_data)
+{
+	ThreadData *data = _data;
+	int increment = data->increment;
 	int index;
 	int i;
 
 	mono_thread_attach ();
+	data->have_attached = TRUE;
+	wait_for_threads_to_attach ();
 
 	index = 0;
 	for (i = 0; i < NUM_ITERATIONS; ++i) {
@@ -246,7 +344,6 @@ thread_func (void *data)
 int
 main (void)
 {
-	pthread_t thread1, thread2, thread3, thread4;
 	QueueEntry *qe;
 	int i;
 
@@ -259,15 +356,19 @@ main (void)
 	for (i = 0; i < NUM_ENTRIES; i += 97)
 		entries [i].mmap = TRUE;
 
-	pthread_create (&thread1, NULL, thread_func, (void*)1);
-	pthread_create (&thread2, NULL, thread_func, (void*)2);
-	pthread_create (&thread3, NULL, thread_func, (void*)3);
-	pthread_create (&thread4, NULL, thread_func, (void*)5);
+	thread_datas [0].increment = 1;
+	if (NUM_THREADS >= 2)
+		thread_datas [1].increment = 2;
+	if (NUM_THREADS >= 3)
+		thread_datas [2].increment = 3;
+	if (NUM_THREADS >= 4)
+		thread_datas [3].increment = 5;
 
-	pthread_join (thread1, NULL);
-	pthread_join (thread2, NULL);
-	pthread_join (thread3, NULL);
-	pthread_join (thread4, NULL);
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
+
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_join (thread_datas [i].thread, NULL);
 
 	mono_thread_hazardous_try_free_all ();
 

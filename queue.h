@@ -13,9 +13,17 @@ struct _MonoLockFreeQueueNode {
 };
 
 typedef struct {
+	MonoLockFreeQueueNode node;
+	gint32 in_use;
+} MonoLockFreeQueueDummy;
+
+#define MONO_LOCK_FREE_QUEUE_NUM_DUMMIES	1
+
+typedef struct {
 	MonoLockFreeQueueNode *head;
 	MonoLockFreeQueueNode *tail;
-	MonoLockFreeQueueNode dummy;
+	MonoLockFreeQueueDummy dummies [MONO_LOCK_FREE_QUEUE_NUM_DUMMIES];
+	gint32 has_dummy;
 } MonoLockFreeQueue;
 
 void mono_lock_free_queue_init (MonoLockFreeQueue *q);
