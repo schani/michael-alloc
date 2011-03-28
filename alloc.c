@@ -282,7 +282,16 @@ alloc_from_active (ProcHeap *heap)
 		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
 
 		next = *(unsigned int*)addr;
-		g_assert (next < SB_USABLE_SIZE / desc->slot_size);
+		/*
+		 * Another thread might have allocated this slot
+		 * already, so next could be invalid.  Even if it's
+		 * within the range, it might still be invalid, of
+		 * course, but we take the shortcut here if we know it
+		 * is, for efficiency, not correctness.
+		 */
+		if (next >= SB_USABLE_SIZE / desc->slot_size)
+			continue;
+
 		new_anchor.data.avail = next;
 		++new_anchor.data.tag;
 
