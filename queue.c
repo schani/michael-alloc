@@ -232,7 +232,7 @@ thread_func (void *data)
 		}
 
 		index += increment;
-		if (index >= NUM_ENTRIES)
+		while (index >= NUM_ENTRIES)
 			index -= NUM_ENTRIES;
 	}
 
