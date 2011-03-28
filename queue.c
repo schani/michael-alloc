@@ -55,11 +55,13 @@ mono_lock_free_queue_enqueue (MonoLockFreeQueue *q, MonoLockFreeQueueNode *node)
 		MonoLockFreeQueueNode *next;
 
 		tail = mono_thread_hazardous_load ((gpointer volatile*)&q->tail, hp, 0);
+		mono_memory_read_barrier ();
 		/*
 		 * We never dereference next so we don't need a
 		 * hazardous load.
 		 */
 		next = tail->next;
+		mono_memory_read_barrier ();
 
 		/* Are tail and next consistent? */
 		if (tail == q->tail) {
@@ -93,7 +95,9 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 
 		head = mono_thread_hazardous_load ((gpointer volatile*)&q->head, hp, 0);
 		tail = q->tail;
+		mono_memory_read_barrier ();
 		next = head->next;
+		mono_memory_read_barrier ();
 
 		/* Are head, tail and next consistent? */
 		if (head == q->head) {
