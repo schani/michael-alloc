@@ -174,7 +174,7 @@ alloc_entry (TableEntry *e)
 	if (e->mmap)
 		return mmap (NULL, getpagesize (), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	else
-		return malloc (sizeof (QueueEntry));
+		return g_malloc0 (sizeof (QueueEntry));
 }
 
 static void
@@ -183,7 +183,7 @@ free_entry_memory (QueueEntry *qe, gboolean mmap)
 	if (mmap)
 		munmap (qe, getpagesize ());
 	else
-		free (qe);
+		g_free (qe);
 }
 
 static void
