@@ -51,7 +51,7 @@ static void*
 mono_gc_alloc_fixed (size_t size, void *dummy)
 {
 	g_assert (dummy == NULL);
-	return malloc (size);
+	return g_malloc0 (size);
 }
 
 static void
