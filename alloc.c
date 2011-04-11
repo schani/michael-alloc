@@ -9,6 +9,8 @@
 #include "test-queue.h"
 #include "sgen-gc.h"
 
+#define DESC_AVAIL_DUMMY
+
 #define LAST_BYTE_DEBUG
 
 #ifdef LAST_BYTE_DEBUG
@@ -52,7 +54,9 @@ struct _Descriptor {
 	unsigned int slot_size;
 	unsigned int max_count;
 	gpointer sb;
+#ifndef DESC_AVAIL_DUMMY
 	Descriptor *next;
+#endif
 	gboolean in_use;
 };
 
@@ -84,8 +88,6 @@ struct _ProcHeap {
 	SizeClass *sc;
 };
 
-static Descriptor * volatile desc_avail;
-
 static gpointer
 alloc_sb (Descriptor *desc)
 {
@@ -104,6 +106,9 @@ free_sb (gpointer sb)
 	mono_sgen_free_os_memory (sb_header, SB_SIZE);
 	//g_print ("free sb %p\n", sb_header);
 }
+
+#ifndef DESC_AVAIL_DUMMY
+static Descriptor * volatile desc_avail;
 
 static Descriptor*
 desc_alloc (void)
@@ -179,6 +184,26 @@ desc_retire (Descriptor *desc)
 	desc->in_use = FALSE;
 	mono_thread_hazardous_free_or_queue (desc, desc_enqueue_avail);
 }
+#else
+MonoLockFreeQueue available_descs;
+
+static Descriptor*
+desc_alloc (void)
+{
+	Descriptor *desc = (Descriptor*)mono_lock_free_queue_dequeue (&available_descs);
+
+	if (desc)
+		return desc;
+
+	return calloc (1, sizeof (Descriptor));
+}
+
+static void
+desc_retire (Descriptor *desc)
+{
+	mono_lock_free_queue_enqueue (&available_descs, &desc->node);
+}
+#endif
 
 static Descriptor*
 list_get_partial (SizeClass *sc)
@@ -597,10 +622,13 @@ descriptor_check_consistency (Descriptor *desc, int more_credits, gboolean print
 	gboolean linked [max_count];
 	int i, last;
 	unsigned int index;
+
+#ifndef DESC_AVAIL_DUMMY
 	Descriptor *avail;
 
 	for (avail = desc_avail; avail; avail = avail->next)
 		ASSERT_OR_PRINT (desc != avail, "descriptor is in the available list\n");
+#endif
 
 	ASSERT_OR_PRINT (desc->slot_size == desc->heap->sc->slot_size, "slot size doesn't match size class\n");
 
