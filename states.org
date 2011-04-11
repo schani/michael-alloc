@@ -1,0 +1,59 @@
+states: null, active, partial, full, empty
+location: NULL, NONE, AVAIL, ACTIVE, PARTIAL, PARTIAL_QUEUE
+
+* desc_alloc
+** location
+AVAIL -> out
+NULL -> out
+* alloc_from_new_sb
+** state
+null -> active
+** location
+desc_alloc -> ACTIVE
+desc_alloc -> desc_retire
+* desc_retire
+** location
+in -> AVAIL
+* alloc_from_active
+** state
+active -> full
+** location
+ACTIVE -> ACTIVE
+ACTIVE -> NONE
+ACTIVE -> update_active
+* update_active
+** state
+active -> partial
+partial -> partial
+full -> partial
+** location
+in -> ACTIVE
+in -> heap_put_partial
+* heap_put_partial
+** location
+in -> PARTIAL
+PARTIAL -> list_put_partial
+* list_put_partial
+** location
+in -> PARTIAL_QUEUE
+* alloc_from_partial
+** state
+partial -> active
+partial -> full
+** location
+heap_get_partial -> desc_retire
+heap_get_partial -> update_active
+* list_get_partial
+** location
+PARTIAL_QUEUE -> out
+PARTIAL_QUEUE -> desc_retire
+* heap_get_partial
+** location
+PARTIAL -> out
+list_get_partial -> out
+* mono_lock_free_free
+** state
+full -> partial
+active -> empty
+partial -> empty
+full -> empty
