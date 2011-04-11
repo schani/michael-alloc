@@ -239,6 +239,8 @@ mono_thread_hazardous_free_or_queue (gpointer p, MonoHazardousFreeFunc free_func
 	for (i = 2; i >= 0; --i)
 		try_free_delayed_free_item (i);
 
+	mono_memory_barrier ();
+
 	/* Now see if the pointer we're freeing is hazardous.  If it
 	   isn't, free it.  Otherwise put it in the delay list. */
 	if (is_pointer_hazardous (p)) {
@@ -286,6 +288,9 @@ mono_thread_hazardous_load (gpointer volatile *pp, MonoThreadHazardPointers *hp,
 			return p;
 		/* Make it hazardous */
 		mono_hazard_pointer_set (hp, hazard_index, p);
+
+		mono_memory_barrier ();
+
 		/* Check that it's still the same.  If not, try
 		   again. */
 		if (*pp != p) {

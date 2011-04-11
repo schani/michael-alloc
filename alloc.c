@@ -6,7 +6,7 @@
 #include "mono-membar.h"
 #include "hazard.h"
 #include "atomic.h"
-#include "queue.h"
+#include "test-queue.h"
 #include "sgen-gc.h"
 
 #define LAST_BYTE_DEBUG
@@ -14,6 +14,16 @@
 #ifdef LAST_BYTE_DEBUG
 #define LAST_BYTE(p,s)	(*((unsigned char*)p + (s) - 1))
 #endif
+
+static volatile gboolean stop_threads = FALSE;
+
+#define ASSERT(x)	do {				\
+		if (!(x)) {				\
+			stop_threads = TRUE;		\
+			mono_memory_write_barrier ();	\
+			g_assert_not_reached ();	\
+		}					\
+	} while (0)
 
 enum {
 	STATE_ACTIVE,
@@ -43,11 +53,12 @@ struct _Descriptor {
 	unsigned int max_count;
 	gpointer sb;
 	Descriptor *next;
+	gboolean in_use;
 };
 
 #define NUM_DESC_BATCH	64
 
-#define SB_SIZE		16384
+#define SB_SIZE		4096
 #define SB_HEADER_SIZE	16
 #define SB_USABLE_SIZE	(SB_SIZE - SB_HEADER_SIZE)
 #define MAX_SMALL_SIZE	(8192 - 8)
@@ -79,8 +90,9 @@ static gpointer
 alloc_sb (Descriptor *desc)
 {
 	gpointer sb_header = mono_sgen_alloc_os_memory_aligned (SB_SIZE, SB_SIZE, TRUE);
-	g_assert (sb_header == SB_HEADER_FOR_ADDR (sb_header));
+	ASSERT (sb_header == SB_HEADER_FOR_ADDR (sb_header));
 	DESCRIPTOR_FOR_ADDR (sb_header) = desc;
+	//g_print ("sb %p for %p\n", sb_header, desc);
 	return (char*)sb_header + SB_HEADER_SIZE;
 }
 
@@ -88,8 +100,9 @@ static void
 free_sb (gpointer sb)
 {
 	gpointer sb_header = SB_HEADER_FOR_ADDR (sb);
-	g_assert ((char*)sb_header + SB_HEADER_SIZE == sb);
+	ASSERT ((char*)sb_header + SB_HEADER_SIZE == sb);
 	mono_sgen_free_os_memory (sb_header, SB_SIZE);
+	//g_print ("free sb %p\n", sb_header);
 }
 
 static Descriptor*
@@ -134,7 +147,10 @@ desc_alloc (void)
 			break;
 	}
 
-	g_assert (ACTIVE_CREDITS (desc) == 0);
+	ASSERT (ACTIVE_CREDITS (desc) == 0);
+
+	ASSERT (!desc->in_use);
+	desc->in_use = TRUE;
 
 	return desc;
 }
@@ -144,6 +160,9 @@ desc_enqueue_avail (gpointer _desc)
 {
 	Descriptor *desc = _desc;
 	Descriptor *old_head;
+
+	ASSERT (desc->anchor.data.state == STATE_EMPTY);
+	ASSERT (!desc->in_use);
 
 	do {
 		old_head = desc_avail;
@@ -155,13 +174,23 @@ desc_enqueue_avail (gpointer _desc)
 static void
 desc_retire (Descriptor *desc)
 {
+	ASSERT (desc->anchor.data.state == STATE_EMPTY);
+	ASSERT (desc->in_use);
+	desc->in_use = FALSE;
 	mono_thread_hazardous_free_or_queue (desc, desc_enqueue_avail);
 }
 
 static Descriptor*
 list_get_partial (SizeClass *sc)
 {
-	return (Descriptor*) mono_lock_free_queue_dequeue (&sc->partial);
+	for (;;) {
+		Descriptor *desc = (Descriptor*) mono_lock_free_queue_dequeue (&sc->partial);
+		if (!desc)
+			return NULL;
+		if (desc->anchor.data.state != STATE_EMPTY)
+			return desc;
+		desc_retire (desc);
+	}
 }
 
 static void
@@ -228,6 +257,15 @@ remove_empty_desc (ProcHeap *heap, Descriptor *desc)
 		list_remove_empty_desc (heap->sc);
 }
 
+static gboolean
+set_anchor (Descriptor *desc, Anchor old_anchor, Anchor new_anchor)
+{
+	if (old_anchor.data.state == STATE_EMPTY)
+		ASSERT (new_anchor.data.state == STATE_EMPTY);
+
+	return atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) == old_anchor.value;
+}
+
 static void
 update_active (ProcHeap *heap, Descriptor *desc, unsigned int more_credits)
 {
@@ -244,9 +282,10 @@ update_active (ProcHeap *heap, Descriptor *desc, unsigned int more_credits)
 
 	do {
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
+		ASSERT (old_anchor.data.state != STATE_EMPTY);
 		new_anchor.data.count += more_credits;
 		new_anchor.data.state = STATE_PARTIAL;
-	} while (atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) != old_anchor.value);
+	} while (!set_anchor (desc, old_anchor, new_anchor));
 
 	heap_put_partial (desc);
 }
@@ -266,10 +305,12 @@ alloc_from_active (ProcHeap *heap)
 			return NULL;
 
 		old_credits = ACTIVE_CREDITS (old_active);
-		if (old_credits == 0)
+		if (old_credits == 0) {
 			new_active = NULL;
-		else
+		} else {
+			//g_print ("%d credits\n", old_credits);
 			new_active = ACTIVE_MAKE (ACTIVE_PTR (old_active), old_credits - 1);
+		}
 	} while (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, new_active, old_active) != old_active);
 
 	desc = ACTIVE_PTR (old_active);
@@ -278,6 +319,7 @@ alloc_from_active (ProcHeap *heap)
 		unsigned int next;
 
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
+		ASSERT (old_anchor.data.state != STATE_EMPTY);
 
 		mono_memory_read_barrier ();
 
@@ -298,7 +340,7 @@ alloc_from_active (ProcHeap *heap)
 		++new_anchor.data.tag;
 
 		if (old_credits == 0) {
-			g_assert (old_anchor.data.state == STATE_ACTIVE);
+			ASSERT (old_anchor.data.state == STATE_ACTIVE);
 			if (old_anchor.data.count == 0) {
 				new_anchor.data.state = STATE_FULL;
 			} else {
@@ -306,10 +348,13 @@ alloc_from_active (ProcHeap *heap)
 				new_anchor.data.count -= more_credits;
 			}
 		}
-	} while (atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) != old_anchor.value);
+	} while (!set_anchor (desc, old_anchor, new_anchor));
 
 	if (old_credits == 0 && old_anchor.data.count > 0)
 		update_active (heap, desc, more_credits);
+
+	mono_memory_barrier ();
+	//g_print ("%p alloc active %p\n", (void*)pthread_self (), addr);
 
 	return addr;
 }
@@ -336,14 +381,14 @@ alloc_from_partial (ProcHeap *heap)
 			goto retry;
 		}
 
-		g_assert (old_anchor.data.state == STATE_PARTIAL);
-		g_assert (old_anchor.data.count > 0);
+		ASSERT (old_anchor.data.state == STATE_PARTIAL);
+		ASSERT (old_anchor.data.count > 0);
 
 		more_credits = MIN (old_anchor.data.count - 1, MAX_CREDITS);
 
 		new_anchor.data.count -= more_credits + 1;
 		new_anchor.data.state = (more_credits > 0) ? STATE_ACTIVE : STATE_FULL;
-	} while (atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) != old_anchor.value);
+	} while (!set_anchor (desc, old_anchor, new_anchor));
 
 	do {
 		unsigned int next;
@@ -353,13 +398,27 @@ alloc_from_partial (ProcHeap *heap)
 		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
 
 		next = *(unsigned int*)addr;
-		g_assert (next < SB_USABLE_SIZE / desc->slot_size);
+		if (next >= SB_USABLE_SIZE / desc->slot_size) {
+			/*
+			 * The slot could have been alloced by another
+			 * thread and the next field overwritten, so
+			 * it's possible that it's invalid.  That
+			 * doesn't change correctness, though, because
+			 * we wouldn't be able to set the new
+			 * anchor.
+			 */
+			ASSERT (desc->anchor.data.tag != old_anchor.data.tag);
+			continue;
+		}
 		new_anchor.data.avail = next;
 		++new_anchor.data.tag;
-	} while (atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) != old_anchor.value);
+	} while (!set_anchor (desc, old_anchor, new_anchor));
 
 	if (more_credits > 0)
 		update_active (heap, desc, more_credits);
+
+	mono_memory_barrier ();
+	//g_print ("%p alloc partial %p\n", (void*)pthread_self (), addr);
 
 	return addr;
 }
@@ -386,6 +445,7 @@ alloc_from_new_sb (ProcHeap *heap)
 	 * right away.
 	 */
 	desc->anchor.data.avail = 1;
+	desc->anchor.data.tag = 0;
 	desc->slot_size = heap->sc->slot_size;
 	desc->max_count = count;
 
@@ -398,15 +458,18 @@ alloc_from_new_sb (ProcHeap *heap)
 	mono_memory_write_barrier ();
 
 	if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, new_active, NULL) == NULL) {
+		mono_memory_barrier ();
+		//g_print ("%p alloc new %p\n", (void*)pthread_self (), desc->sb);
 		return desc->sb;
 	} else {
 		free_sb (desc->sb);
+		desc->anchor.data.state = STATE_EMPTY;
 		desc_retire (desc);
 		return NULL;
 	}
 }
 
-#define TEST_SIZE	64
+#define TEST_SIZE	1024
 
 static SizeClass test_sc;
 static ProcHeap test_heap;
@@ -422,9 +485,9 @@ init_heap (void)
 static ProcHeap*
 find_heap (size_t size)
 {
-	g_assert (size <= TEST_SIZE);
+	ASSERT (size <= TEST_SIZE);
 
-	g_assert (test_heap.sc == &test_sc);
+	ASSERT (test_heap.sc == &test_sc);
 
 	return &test_heap;
 }
@@ -439,7 +502,7 @@ mono_lock_free_alloc (size_t size)
 		return mono_sgen_alloc_os_memory (size, TRUE);
 
 	heap = find_heap (size);
-	g_assert (heap);
+	ASSERT (heap);
 
 	for (;;) {
 
@@ -457,7 +520,7 @@ mono_lock_free_alloc (size_t size)
 	}
 
 #ifdef LAST_BYTE_DEBUG
-	g_assert (!LAST_BYTE (addr, heap->sc->slot_size));
+	ASSERT (!LAST_BYTE (addr, heap->sc->slot_size));
 	LAST_BYTE (addr, heap->sc->slot_size) = 1;
 #endif
 
@@ -472,6 +535,9 @@ mono_lock_free_free (gpointer ptr, size_t size)
 	gpointer sb;
 	ProcHeap *heap = NULL;
 
+	mono_memory_barrier ();
+	//g_print ("%p free %p\n", (void*)pthread_self (), ptr);
+
 	if (size > MAX_SMALL_SIZE) {
 		mono_sgen_free_os_memory (ptr, size);
 		return;
@@ -479,10 +545,10 @@ mono_lock_free_free (gpointer ptr, size_t size)
 
 	desc = DESCRIPTOR_FOR_ADDR (ptr);
 	sb = desc->sb;
-	g_assert (SB_HEADER_FOR_ADDR (ptr) == SB_HEADER_FOR_ADDR (sb));
+	ASSERT (SB_HEADER_FOR_ADDR (ptr) == SB_HEADER_FOR_ADDR (sb));
 
 #ifdef LAST_BYTE_DEBUG
-	g_assert (LAST_BYTE (ptr, desc->slot_size));
+	ASSERT (LAST_BYTE (ptr, desc->slot_size));
 	LAST_BYTE (ptr, desc->slot_size) = 0;
 #endif
 
@@ -490,23 +556,22 @@ mono_lock_free_free (gpointer ptr, size_t size)
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
 		*(unsigned int*)ptr = old_anchor.data.avail;
 		new_anchor.data.avail = ((char*)ptr - (char*)sb) / desc->slot_size;
-		g_assert (new_anchor.data.avail < SB_USABLE_SIZE / desc->slot_size);
+		ASSERT (new_anchor.data.avail < SB_USABLE_SIZE / desc->slot_size);
 
 		if (old_anchor.data.state == STATE_FULL)
 			new_anchor.data.state = STATE_PARTIAL;
 
-		if (old_anchor.data.count == desc->max_count - 1) {
+		if (++new_anchor.data.count == desc->max_count) {
 			heap = desc->heap;
-			/* FIXME: instruction fence (?) */
+			mono_memory_barrier ();
 			new_anchor.data.state = STATE_EMPTY;
-		} else {
-			++new_anchor.data.count;
 		}
 
 		mono_memory_write_barrier ();
-	} while (atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) != old_anchor.value);
+	} while (!set_anchor (desc, old_anchor, new_anchor));
 
 	if (new_anchor.data.state == STATE_EMPTY) {
+		ASSERT (old_anchor.data.state != STATE_EMPTY);
 		free_sb (sb);
 		remove_empty_desc (heap, desc);
 	} else if (old_anchor.data.state == STATE_FULL) {
@@ -515,48 +580,74 @@ mono_lock_free_free (gpointer ptr, size_t size)
 }
 
 #ifdef LAST_BYTE_DEBUG
+#define ASSERT_OR_PRINT(c, format, ...)	do {				\
+		if (!(c)) {						\
+			if (print)					\
+				g_print ((format), ## __VA_ARGS__);	\
+			else						\
+				ASSERT (FALSE);				\
+		}							\
+	} while (0)
+
 static void
-descriptor_check_consistency (Descriptor *desc, int more_credits)
+descriptor_check_consistency (Descriptor *desc, int more_credits, gboolean print)
 {
 	int count = desc->anchor.data.count + more_credits;
 	int max_count = SB_USABLE_SIZE / desc->slot_size;
 	gboolean linked [max_count];
-	int i;
+	int i, last;
 	unsigned int index;
 	Descriptor *avail;
 
 	for (avail = desc_avail; avail; avail = avail->next)
-		g_assert (desc != avail);
+		ASSERT_OR_PRINT (desc != avail, "descriptor is in the available list\n");
 
-	g_assert (desc->slot_size == desc->heap->sc->slot_size);
+	ASSERT_OR_PRINT (desc->slot_size == desc->heap->sc->slot_size, "slot size doesn't match size class\n");
+
+	if (print)
+		g_print ("descriptor %p is ", desc);
 
 	switch (desc->anchor.data.state) {
 	case STATE_ACTIVE:
-		g_assert (count <= max_count);
+		if (print)
+			g_print ("active\n");
+		ASSERT_OR_PRINT (count <= max_count, "count too high: is %d but max is %d\n", count, max_count);
 		break;
 	case STATE_FULL:
-		g_assert (count == 0);
+		if (print)
+			g_print ("full\n");
+		ASSERT_OR_PRINT (count == 0, "count is not zero: %d\n", count);
 		break;
 	case STATE_PARTIAL:
-		g_assert (count < max_count);
+		if (print)
+			g_print ("partial\n");
+		ASSERT_OR_PRINT (count < max_count, "count too high: is %d but must be below %d\n", count, max_count);
 		break;
 	case STATE_EMPTY:
-		g_assert (count == max_count);
+		if (print)
+			g_print ("empty\n");
+		ASSERT_OR_PRINT (count == max_count, "count is wrong: is %d but should be %d\n", count, max_count);
 		break;
 	default:
-		g_assert_not_reached ();
+		ASSERT_OR_PRINT (FALSE, "invalid state\n");
 	}
 
 	for (i = 0; i < max_count; ++i)
 		linked [i] = FALSE;
 
 	index = desc->anchor.data.avail;
+	last = -1;
 	for (i = 0; i < count; ++i) {
 		gpointer addr = (char*)desc->sb + index * desc->slot_size;
-		g_assert (index >= 0 && index < max_count);
-		g_assert (!linked [index]);
-		g_assert (!LAST_BYTE (addr, desc->slot_size));
+		ASSERT_OR_PRINT (index >= 0 && index < max_count,
+				"index %d for %dth available slot, linked from %d, not in range [0 .. %d)\n",
+				index, i, last, max_count);
+		ASSERT_OR_PRINT (!linked [index], "%dth available slot %d linked twice\n", i, index);
+		if (linked [index])
+			break;
+		ASSERT_OR_PRINT (!LAST_BYTE (addr, desc->slot_size), "debug byte on %dth available slot %d set\n", i, index);
 		linked [index] = TRUE;
+		last = index;
 		index = *(unsigned int*)addr;
 	}
 
@@ -564,7 +655,7 @@ descriptor_check_consistency (Descriptor *desc, int more_credits)
 		gpointer addr = (char*)desc->sb + i * desc->slot_size;
 		if (linked [i])
 			continue;
-		g_assert (LAST_BYTE (addr, desc->slot_size));
+		ASSERT_OR_PRINT (LAST_BYTE (addr, desc->slot_size), "debug byte on non-available slot %d not set\n", i);
 	}
 }
 
@@ -575,16 +666,16 @@ heap_check_consistency (ProcHeap *heap)
 	Descriptor *desc;
 	if (active) {
 		int credits = ACTIVE_CREDITS (heap->active);
-		g_assert (active->anchor.data.state == STATE_ACTIVE);
-		descriptor_check_consistency (active, credits + 1);
+		ASSERT (active->anchor.data.state == STATE_ACTIVE);
+		descriptor_check_consistency (active, credits + 1, FALSE);
 	}
 	if (heap->partial) {
-		g_assert (heap->partial->anchor.data.state == STATE_PARTIAL);
-		descriptor_check_consistency (heap->partial, 0);
+		ASSERT (heap->partial->anchor.data.state == STATE_PARTIAL);
+		descriptor_check_consistency (heap->partial, 0, FALSE);
 	}
 	while ((desc = (Descriptor*)mono_lock_free_queue_dequeue (&heap->sc->partial))) {
-		g_assert (desc->anchor.data.state == STATE_PARTIAL || desc->anchor.data.state == STATE_EMPTY);
-		descriptor_check_consistency (desc, 0);
+		ASSERT (desc->anchor.data.state == STATE_PARTIAL || desc->anchor.data.state == STATE_EMPTY);
+		descriptor_check_consistency (desc, 0, FALSE);
 	}
 
 	g_print ("heap consistent\n");
@@ -596,20 +687,82 @@ heap_check_consistency (ProcHeap *heap)
 
 #if 1
 
-#define NUM_THREADS	2
+#define NUM_THREADS	4
+
+enum {
+	ACTION_NONE,
+	ACTION_ALLOC,
+	ACTION_FREE
+};
+
+#define ACTION_BUFFER_SIZE	16
+
+typedef struct {
+	int action;
+	int index;
+	gpointer p;
+} ThreadAction;
 
 typedef struct {
 	pthread_t thread;
 	int increment;
 	volatile gboolean have_attached;
+	ThreadAction action_buffer [ACTION_BUFFER_SIZE];
+	int next_action_index;
 } ThreadData;
 
 static ThreadData thread_datas [NUM_THREADS];
 
-#define NUM_ENTRIES	256
+#define NUM_ENTRIES	32
 #define NUM_ITERATIONS	100000000
 
 static gpointer entries [NUM_ENTRIES];
+
+static volatile guint64 atomic_test;
+
+static void
+log_action (ThreadData *data, int action, int index, gpointer p)
+{
+	data->action_buffer [data->next_action_index].action = action;
+	data->action_buffer [data->next_action_index].index = index;
+	data->action_buffer [data->next_action_index].p = p;
+
+	data->next_action_index = (data->next_action_index + 1) % ACTION_BUFFER_SIZE;
+}
+
+static void
+dump_action_logs (void)
+{
+	int i, j;
+
+	for (i = 0; i < NUM_THREADS; ++i) {
+		g_print ("action log for thread %d:\n\n", i);
+
+		j = thread_datas [i].next_action_index;
+		do {
+			ThreadAction *action = &thread_datas [i].action_buffer [j];
+			switch (action->action) {
+			case ACTION_NONE:
+				break;
+
+			case ACTION_ALLOC:
+				g_print ("%6d %p alloc\n", action->index, action->p);
+				break;
+
+			case ACTION_FREE:
+				g_print ("%6d %p free\n", action->index, action->p);
+				break;
+
+			default:
+				g_assert_not_reached ();
+			}
+
+			j = (j + 1) % ACTION_BUFFER_SIZE;
+		} while (j != thread_datas [i].next_action_index);
+
+		g_print ("\n\n");
+	}
+}
 
 static void
 wait_for_threads_to_attach (void)
@@ -639,26 +792,43 @@ thread_func (void *_data)
 	for (i = 0; i < NUM_ITERATIONS; ++i) {
 		gpointer p;
 	retry:
+		if (stop_threads) {
+			for (;;) {
+				usleep (1000000);
+				g_print ("stopped and sleeped\n");
+			}
+		}
+
 		p = entries [index];
 		if (p) {
 			if (InterlockedCompareExchangePointer ((gpointer * volatile)&entries [index], NULL, p) != p)
 				goto retry;
-			g_assert (*(int*)p == index);
+			ASSERT (*(int*)p == index << 10);
+			*(int*)p = -1;
 			mono_lock_free_free (p, TEST_SIZE);
-		} else {
-			int j;
 
+			log_action (data, ACTION_FREE, index, p);
+		} else {
 			p = mono_lock_free_alloc (TEST_SIZE);
 
 			/*
+			int j;
+
 			for (j = 0; j < NUM_ENTRIES; ++j)
-				g_assert (entries [j] != p);
+				ASSERT (entries [j] != p);
 			*/
 
-			*(int*)p = index;
+			*(int*)p = index << 10;
+
+			log_action (data, ACTION_ALLOC, index, p);
+
 			if (InterlockedCompareExchangePointer ((gpointer * volatile)&entries [index], p, NULL) != NULL) {
 				//g_print ("immediate free %p\n", p);
+				*(int*)p = -1;
 				mono_lock_free_free (p, TEST_SIZE);
+
+				log_action (data, ACTION_FREE, index, p);
+
 				goto retry;
 			}
 		}
@@ -666,6 +836,11 @@ thread_func (void *_data)
 		index += increment;
 		while (index >= NUM_ENTRIES)
 			index -= NUM_ENTRIES;
+
+		guint64 a = atomic_test;
+		ASSERT ((a & 0xffffffff) == (a >> 32));
+		guint64 new_a = (index | ((guint64)index << 32));
+		atomic64_cmpxchg ((volatile gint64*)&atomic_test, a, new_a);
 	}
 
 	return NULL;
@@ -676,16 +851,22 @@ main (void)
 {
 	int i;
 
+	ASSERT (sizeof (Anchor) <= 8);
+
 	mono_thread_hazardous_init ();
 
 	mono_thread_attach ();
 
 	init_heap ();
+	mono_lock_free_alloc (TEST_SIZE);
 
 	thread_datas [0].increment = 1;
-	thread_datas [1].increment = 2;
-	thread_datas [2].increment = 3;
-	thread_datas [3].increment = 5;
+	if (NUM_THREADS >= 2)
+		thread_datas [1].increment = 2;
+	if (NUM_THREADS >= 3)
+		thread_datas [2].increment = 3;
+	if (NUM_THREADS >= 4)
+		thread_datas [3].increment = 5;
 
 	for (i = 0; i < NUM_THREADS; ++i)
 		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
@@ -694,6 +875,8 @@ main (void)
 		pthread_join (thread_datas [i].thread, NULL);
 
 	mono_thread_hazardous_try_free_all ();
+
+	mono_thread_hazardous_print_stats ();
 
 	heap_check_consistency (&test_heap);
 
