@@ -28,7 +28,6 @@ static volatile gboolean stop_threads = FALSE;
 	} while (0)
 
 enum {
-	STATE_ACTIVE,
 	STATE_FULL,
 	STATE_PARTIAL,
 	STATE_EMPTY
@@ -75,16 +74,8 @@ typedef struct {
 	unsigned int slot_size;
 } SizeClass;
 
-#define MAX_CREDITS	0x3f
-
-#define ACTIVE_PTR(a)		((Descriptor*)((mword)(a) & ~(mword)MAX_CREDITS))
-#define ACTIVE_CREDITS(a)	((mword)(a) & (mword)MAX_CREDITS)
-#define ACTIVE_MAKE(p,c)	((Descriptor*)((mword)(p) | (mword)(c)))
-#define ACTIVE_SET_CREDITS(a,c)	(ACTIVE_MAKE (ACTIVE_PTR ((a)), (c)))
-
 struct _ProcHeap {
-	Descriptor *active;	/* lowest 6 bits are used for credits */
-	Descriptor *partial;
+	Descriptor *active;
 	SizeClass *sc;
 };
 
@@ -182,6 +173,7 @@ desc_retire (Descriptor *desc)
 	ASSERT (desc->anchor.data.state == STATE_EMPTY);
 	ASSERT (desc->in_use);
 	desc->in_use = FALSE;
+	free_sb (desc->sb);
 	mono_thread_hazardous_free_or_queue (desc, desc_enqueue_avail);
 }
 #else
@@ -201,6 +193,7 @@ desc_alloc (void)
 static void
 desc_retire (Descriptor *desc)
 {
+	free_sb (desc->sb);
 	mono_lock_free_queue_enqueue (&available_descs, &desc->node);
 }
 #endif
@@ -249,37 +242,13 @@ list_remove_empty_desc (SizeClass *sc)
 static Descriptor*
 heap_get_partial (ProcHeap *heap)
 {
-	Descriptor *desc;
-
-	do {
-		desc = heap->partial;
-		if (!desc)
-			return list_get_partial (heap->sc);
-	} while (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->partial, NULL, desc) != desc);
-	return desc;
+	return list_get_partial (heap->sc);
 }
 
 static void
 heap_put_partial (Descriptor *desc)
 {
-	ProcHeap *heap = desc->heap;
-	Descriptor *prev;
-
-	do {
-		prev = desc->heap->partial;
-	} while (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->partial, desc, prev) != prev);
-
-	if (prev)
-		list_put_partial (prev);
-}
-
-static void
-remove_empty_desc (ProcHeap *heap, Descriptor *desc)
-{
-	if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->partial, NULL, desc) == desc)
-		desc_retire (desc);
-	else
-		list_remove_empty_desc (heap->sc);
+	list_put_partial (desc);
 }
 
 static gboolean
@@ -291,92 +260,58 @@ set_anchor (Descriptor *desc, Anchor old_anchor, Anchor new_anchor)
 	return atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) == old_anchor.value;
 }
 
-static void
-update_active (ProcHeap *heap, Descriptor *desc, unsigned int more_credits)
-{
-	Anchor old_anchor, new_anchor;
-	Descriptor *new_active = ACTIVE_SET_CREDITS (desc, more_credits - 1);
-
-	if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, new_active, NULL) == NULL)
-		return;
-
-	/*
-	 * Someone installed another active sb.  Return credits to sb
-	 * and make it partial.
-	 */
-
-	do {
-		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
-		ASSERT (old_anchor.data.state != STATE_EMPTY);
-		new_anchor.data.count += more_credits;
-		new_anchor.data.state = STATE_PARTIAL;
-	} while (!set_anchor (desc, old_anchor, new_anchor));
-
-	heap_put_partial (desc);
-}
-
 static gpointer
-alloc_from_active (ProcHeap *heap)
+alloc_from_active_or_partial (ProcHeap *heap)
 {
-	Descriptor *old_active, *new_active, *desc;
+	Descriptor *desc;
 	Anchor old_anchor, new_anchor;
 	gpointer addr;
-	unsigned int old_credits;
-	unsigned int more_credits = 0;
 
-	do {
-		old_active = heap->active;
-		if (!old_active)
+ retry:
+	desc = heap->active;
+	if (desc) {
+		if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, NULL, desc) != desc)
+			goto retry;
+	} else {
+		desc = heap_get_partial (heap);
+		if (!desc)
 			return NULL;
+	}
 
-		old_credits = ACTIVE_CREDITS (old_active);
-		if (old_credits == 0) {
-			new_active = NULL;
-		} else {
-			//g_print ("%d credits\n", old_credits);
-			new_active = ACTIVE_MAKE (ACTIVE_PTR (old_active), old_credits - 1);
-		}
-	} while (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, new_active, old_active) != old_active);
-
-	desc = ACTIVE_PTR (old_active);
+	/* Now we own the desc. */
 
 	do {
 		unsigned int next;
 
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
-		ASSERT (old_anchor.data.state != STATE_EMPTY);
+		if (old_anchor.data.state == STATE_EMPTY) {
+			/* We must free it because we own it. */
+			desc_retire (desc);
+			goto retry;
+		}
+		ASSERT (old_anchor.data.state == STATE_PARTIAL);
+		ASSERT (old_anchor.data.count > 0);
 
 		mono_memory_read_barrier ();
 
 		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
 
 		next = *(unsigned int*)addr;
-		/*
-		 * Another thread might have allocated this slot
-		 * already, so next could be invalid.  Even if it's
-		 * within the range, it might still be invalid, of
-		 * course, but we take the shortcut here if we know it
-		 * is, for efficiency, not correctness.
-		 */
-		if (next >= SB_USABLE_SIZE / desc->slot_size)
-			continue;
+		ASSERT (next < SB_USABLE_SIZE / desc->slot_size);
 
 		new_anchor.data.avail = next;
+		--new_anchor.data.count;
 		++new_anchor.data.tag;
 
-		if (old_credits == 0) {
-			ASSERT (old_anchor.data.state == STATE_ACTIVE);
-			if (old_anchor.data.count == 0) {
-				new_anchor.data.state = STATE_FULL;
-			} else {
-				more_credits = MIN (old_anchor.data.count, MAX_CREDITS);
-				new_anchor.data.count -= more_credits;
-			}
-		}
+		if (new_anchor.data.count == 0)
+			new_anchor.data.state = STATE_FULL;
 	} while (!set_anchor (desc, old_anchor, new_anchor));
 
-	if (old_credits == 0 && old_anchor.data.count > 0)
-		update_active (heap, desc, more_credits);
+	/* If the desc is partial we have to give it back. */
+	if (new_anchor.data.state == STATE_PARTIAL) {
+		if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, desc, NULL) != NULL)
+			heap_put_partial (desc);
+	}
 
 	mono_memory_barrier ();
 	//g_print ("%p alloc active %p\n", (void*)pthread_self (), addr);
@@ -385,74 +320,9 @@ alloc_from_active (ProcHeap *heap)
 }
 
 static gpointer
-alloc_from_partial (ProcHeap *heap)
-{
-	Descriptor *desc;
-	Anchor old_anchor, new_anchor;
-	unsigned int more_credits = 0;
-	gpointer addr;
-
- retry:
-	desc = heap_get_partial (heap);
-	if (!desc)
-		return NULL;
-
-	desc->heap = heap;
-	do {
-		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
-
-		if (old_anchor.data.state == STATE_EMPTY) {
-			desc_retire (desc);
-			goto retry;
-		}
-
-		ASSERT (old_anchor.data.state == STATE_PARTIAL);
-		ASSERT (old_anchor.data.count > 0);
-
-		more_credits = MIN (old_anchor.data.count - 1, MAX_CREDITS);
-
-		new_anchor.data.count -= more_credits + 1;
-		new_anchor.data.state = (more_credits > 0) ? STATE_ACTIVE : STATE_FULL;
-	} while (!set_anchor (desc, old_anchor, new_anchor));
-
-	do {
-		unsigned int next;
-
-		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
-
-		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
-
-		next = *(unsigned int*)addr;
-		if (next >= SB_USABLE_SIZE / desc->slot_size) {
-			/*
-			 * The slot could have been alloced by another
-			 * thread and the next field overwritten, so
-			 * it's possible that it's invalid.  That
-			 * doesn't change correctness, though, because
-			 * we wouldn't be able to set the new
-			 * anchor.
-			 */
-			ASSERT (desc->anchor.data.tag != old_anchor.data.tag);
-			continue;
-		}
-		new_anchor.data.avail = next;
-		++new_anchor.data.tag;
-	} while (!set_anchor (desc, old_anchor, new_anchor));
-
-	if (more_credits > 0)
-		update_active (heap, desc, more_credits);
-
-	mono_memory_barrier ();
-	//g_print ("%p alloc partial %p\n", (void*)pthread_self (), addr);
-
-	return addr;
-}
-
-static gpointer
 alloc_from_new_sb (ProcHeap *heap)
 {
-	Descriptor *new_active;
-	unsigned int slot_size, count, credits, i;
+	unsigned int slot_size, count, i;
 	Descriptor *desc = desc_alloc ();
 
 	desc->sb = alloc_sb (desc);
@@ -474,20 +344,16 @@ alloc_from_new_sb (ProcHeap *heap)
 	desc->slot_size = heap->sc->slot_size;
 	desc->max_count = count;
 
-	credits = MIN (desc->max_count - 1, MAX_CREDITS) - 1;
-	new_active = ACTIVE_MAKE (desc, credits);
-
-	desc->anchor.data.count = (desc->max_count - 1) - (credits + 1);
-	desc->anchor.data.state = STATE_ACTIVE;
+	desc->anchor.data.count = desc->max_count - 1;
+	desc->anchor.data.state = STATE_PARTIAL;
 
 	mono_memory_write_barrier ();
 
-	if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, new_active, NULL) == NULL) {
+	if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, desc, NULL) == NULL) {
 		mono_memory_barrier ();
 		//g_print ("%p alloc new %p\n", (void*)pthread_self (), desc->sb);
 		return desc->sb;
 	} else {
-		free_sb (desc->sb);
 		desc->anchor.data.state = STATE_EMPTY;
 		desc_retire (desc);
 		return NULL;
@@ -531,11 +397,7 @@ mono_lock_free_alloc (size_t size)
 
 	for (;;) {
 
-		addr = alloc_from_active (heap);
-		if (addr)
-			break;
-
-		addr = alloc_from_partial (heap);
+		addr = alloc_from_active_or_partial (heap);
 		if (addr)
 			break;
 
@@ -597,10 +459,27 @@ mono_lock_free_free (gpointer ptr, size_t size)
 
 	if (new_anchor.data.state == STATE_EMPTY) {
 		ASSERT (old_anchor.data.state != STATE_EMPTY);
-		free_sb (sb);
-		remove_empty_desc (heap, desc);
+
+		if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, NULL, desc) == desc) {
+			/* We own it, so we free it. */
+			desc_retire (desc);
+		} else {
+			/*
+			 * Somebody else must free it, so we do some
+			 * freeing for others.
+			 */
+			list_remove_empty_desc (heap->sc);
+		}
 	} else if (old_anchor.data.state == STATE_FULL) {
-		heap_put_partial (desc);
+		/*
+		 * Nobody owned it, now we do, so we need to give it
+		 * back.
+		 */
+
+		g_assert (new_anchor.data.state == STATE_PARTIAL);
+
+		if (InterlockedCompareExchangePointer ((gpointer * volatile)&desc->heap->active, desc, NULL) != NULL)
+			heap_put_partial (desc);
 	}
 }
 
@@ -615,9 +494,9 @@ mono_lock_free_free (gpointer ptr, size_t size)
 	} while (0)
 
 static void
-descriptor_check_consistency (Descriptor *desc, int more_credits, gboolean print)
+descriptor_check_consistency (Descriptor *desc, gboolean print)
 {
-	int count = desc->anchor.data.count + more_credits;
+	int count = desc->anchor.data.count;
 	int max_count = SB_USABLE_SIZE / desc->slot_size;
 	gboolean linked [max_count];
 	int i, last;
@@ -636,11 +515,6 @@ descriptor_check_consistency (Descriptor *desc, int more_credits, gboolean print
 		g_print ("descriptor %p is ", desc);
 
 	switch (desc->anchor.data.state) {
-	case STATE_ACTIVE:
-		if (print)
-			g_print ("active\n");
-		ASSERT_OR_PRINT (count <= max_count, "count too high: is %d but max is %d\n", count, max_count);
-		break;
 	case STATE_FULL:
 		if (print)
 			g_print ("full\n");
@@ -690,20 +564,15 @@ descriptor_check_consistency (Descriptor *desc, int more_credits, gboolean print
 static void
 heap_check_consistency (ProcHeap *heap)
 {
-	Descriptor *active = ACTIVE_PTR (heap->active);
+	Descriptor *active = heap->active;
 	Descriptor *desc;
 	if (active) {
-		int credits = ACTIVE_CREDITS (heap->active);
-		ASSERT (active->anchor.data.state == STATE_ACTIVE);
-		descriptor_check_consistency (active, credits + 1, FALSE);
-	}
-	if (heap->partial) {
-		ASSERT (heap->partial->anchor.data.state == STATE_PARTIAL);
-		descriptor_check_consistency (heap->partial, 0, FALSE);
+		ASSERT (active->anchor.data.state == STATE_PARTIAL);
+		descriptor_check_consistency (active, FALSE);
 	}
 	while ((desc = (Descriptor*)mono_lock_free_queue_dequeue (&heap->sc->partial))) {
 		ASSERT (desc->anchor.data.state == STATE_PARTIAL || desc->anchor.data.state == STATE_EMPTY);
-		descriptor_check_consistency (desc, 0, FALSE);
+		descriptor_check_consistency (desc, FALSE);
 	}
 
 	g_print ("heap consistent\n");
@@ -869,6 +738,9 @@ thread_func (void *_data)
 		ASSERT ((a & 0xffffffff) == (a >> 32));
 		guint64 new_a = (index | ((guint64)index << 32));
 		atomic64_cmpxchg ((volatile gint64*)&atomic_test, a, new_a);
+
+		if (i % (NUM_ITERATIONS / 20) == 0)
+			g_print ("thread %d: %d\n", increment, i);
 	}
 
 	return NULL;
