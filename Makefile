@@ -1,5 +1,10 @@
-#QUEUE = queue
-QUEUE = test-queue
+#TEST_QUEUE = -DTEST_QUEUE
+TEST_ALLOC = -DTEST_ALLOC
 
-test : hazard.c $(QUEUE).c alloc.c mono-mmap.c sgen-gc.c
-	gcc -O0 -g -Wall -o test hazard.c $(QUEUE).c alloc.c mono-mmap.c sgen-gc.c -lpthread $(shell pkg-config --cflags --libs glib-2.0)
+ALLOC_C = alloc.c
+
+QUEUE = queue
+#QUEUE = test-queue
+
+test : hazard.c $(QUEUE).c $(ALLOC_C) mono-mmap.c sgen-gc.c
+	gcc -O0 $(TEST_QUEUE) $(TEST_ALLOC) -g -Wall -o test hazard.c $(QUEUE).c $(ALLOC_C) mono-mmap.c sgen-gc.c -lpthread $(shell pkg-config --cflags --libs glib-2.0)

@@ -29,12 +29,16 @@
 
 #include "queue.h"
 
+#define INVALID_NEXT	((void*)-1)
+#define END_MARKER	((void*)-2)
+#define FREE_NEXT	((void*)-3)
+
 void
 mono_lock_free_queue_init (MonoLockFreeQueue *q)
 {
 	int i;
 	for (i = 0; i < MONO_LOCK_FREE_QUEUE_NUM_DUMMIES; ++i) {
-		q->dummies [i].node.next = NULL;
+		q->dummies [i].node.next = (i == 0) ? END_MARKER : FREE_NEXT;
 		q->dummies [i].in_use = i == 0 ? 1 : 0;
 #ifdef QUEUE_DEBUG
 		q->dummies [i].node.in_queue = i == 0 ? TRUE : FALSE;
@@ -43,6 +47,25 @@ mono_lock_free_queue_init (MonoLockFreeQueue *q)
 
 	q->head = q->tail = &q->dummies [0].node;
 	q->has_dummy = 1;
+}
+
+void
+mono_lock_free_queue_node_init (MonoLockFreeQueueNode *node, gboolean to_be_freed)
+{
+	node->next = to_be_freed ? INVALID_NEXT : FREE_NEXT;
+#ifdef QUEUE_DEBUG
+	node->in_queue = FALSE;
+#endif
+}
+
+void
+mono_lock_free_queue_node_free (MonoLockFreeQueueNode *node)
+{
+	g_assert (node->next == INVALID_NEXT);
+#ifdef QUEUE_DEBUG
+	g_assert (!node->in_queue);
+#endif
+	node->next = FREE_NEXT;
 }
 
 void
@@ -57,7 +80,8 @@ mono_lock_free_queue_enqueue (MonoLockFreeQueue *q, MonoLockFreeQueueNode *node)
 	mono_memory_write_barrier ();
 #endif
 
-	node->next = NULL;
+	g_assert (node->next == FREE_NEXT);
+	node->next = END_MARKER;
 	for (;;) {
 		MonoLockFreeQueueNode *next;
 
@@ -72,8 +96,18 @@ mono_lock_free_queue_enqueue (MonoLockFreeQueue *q, MonoLockFreeQueueNode *node)
 
 		/* Are tail and next consistent? */
 		if (tail == q->tail) {
-			if (next == NULL) {
-				if (InterlockedCompareExchangePointer ((gpointer volatile*)&tail->next, node, NULL) == NULL)
+			g_assert (next != INVALID_NEXT && next != FREE_NEXT);
+			g_assert (next != tail);
+
+			if (next == END_MARKER) {
+				/*
+				 * Here we require that nodes that
+				 * have been dequeued don't have
+				 * next==END_MARKER.  If they did, we
+				 * might append to a node that isn't
+				 * in the queue anymore here.
+				 */
+				if (InterlockedCompareExchangePointer ((gpointer volatile*)&tail->next, node, END_MARKER) == END_MARKER)
 					break;
 			} else {
 				/* Try to advance tail */
@@ -96,7 +130,9 @@ static void
 free_dummy (gpointer _dummy)
 {
 	MonoLockFreeQueueDummy *dummy = _dummy;
+	mono_lock_free_queue_node_free (&dummy->node);
 	g_assert (dummy->in_use);
+	mono_memory_write_barrier ();
 	dummy->in_use = 0;
 }
 
@@ -162,9 +198,12 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 
 		/* Are head, tail and next consistent? */
 		if (head == q->head) {
+			g_assert (next != INVALID_NEXT && next != FREE_NEXT);
+			g_assert (next != head);
+
 			/* Is queue empty or tail behind? */
 			if (head == tail) {
-				if (next == NULL) {
+				if (next == END_MARKER) {
 					/* Queue is empty */
 					mono_hazard_pointer_clear (hp, 0);
 
@@ -180,10 +219,11 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 
 					return NULL;
 				}
+
 				/* Try to advance tail */
 				InterlockedCompareExchangePointer ((gpointer volatile*)&q->tail, next, tail);
 			} else {
-				g_assert (next);
+				g_assert (next != END_MARKER);
 				/* Try to dequeue head */
 				if (InterlockedCompareExchangePointer ((gpointer volatile*)&q->head, next, head) == head)
 					break;
@@ -201,6 +241,13 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 	mono_memory_write_barrier ();
 	mono_hazard_pointer_clear (hp, 0);
 
+	g_assert (head->next);
+	/*
+	 * Setting next here isn't necessary for correctness, but we
+	 * do it to make sure that we catch dereferencing next in a
+	 * node that's not in the queue anymore.
+	 */
+	head->next = INVALID_NEXT;
 #if QUEUE_DEBUG
 	g_assert (head->in_queue);
 	head->in_queue = FALSE;
@@ -223,10 +270,10 @@ mono_lock_free_queue_dequeue (MonoLockFreeQueue *q)
 
 /* Test code */
 
-#if 0
+#ifdef TEST_QUEUE
 
-#define NUM_ENTRIES	32768
-#define NUM_ITERATIONS	100000000
+#define NUM_ENTRIES	16
+#define NUM_ITERATIONS	10000000
 
 typedef struct _TableEntry TableEntry;
 
@@ -246,10 +293,16 @@ static TableEntry entries [NUM_ENTRIES];
 static QueueEntry*
 alloc_entry (TableEntry *e)
 {
+	QueueEntry *qe;
+
 	if (e->mmap)
-		return mmap (NULL, getpagesize (), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		qe = mmap (NULL, getpagesize (), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	else
-		return g_malloc0 (sizeof (QueueEntry));
+		qe = g_malloc0 (sizeof (QueueEntry));
+
+	mono_lock_free_queue_node_init (&qe->node);
+
+	return qe;
 }
 
 static void

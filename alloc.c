@@ -6,10 +6,10 @@
 #include "mono-membar.h"
 #include "hazard.h"
 #include "atomic.h"
-#include "test-queue.h"
+#include "queue.h"
 #include "sgen-gc.h"
 
-#define DESC_AVAIL_DUMMY
+//#define DESC_AVAIL_DUMMY
 
 #define LAST_BYTE_DEBUG
 
@@ -47,7 +47,7 @@ typedef struct _Descriptor Descriptor;
 typedef struct _ProcHeap ProcHeap;
 
 struct _Descriptor {
-	MonoLockFreeQueueNode node; /* Do we really need this? */
+	MonoLockFreeQueueNode node;
 	ProcHeap *heap;
 	Anchor anchor;
 	unsigned int slot_size;
@@ -115,7 +115,7 @@ desc_alloc (void)
 			Descriptor *next = desc->next;
 			success = (InterlockedCompareExchangePointer ((gpointer * volatile)&desc_avail, next, desc) == desc);
 		} else {
-			size_t desc_size = MAX (sizeof (Descriptor), MAX_CREDITS + 1);
+			size_t desc_size = sizeof (Descriptor);
 			Descriptor *d;
 			int i;
 
@@ -126,6 +126,7 @@ desc_alloc (void)
 			for (i = 0; i < NUM_DESC_BATCH; ++i) {
 				Descriptor *next = (i == (NUM_DESC_BATCH - 1)) ? NULL : (Descriptor*)((char*)desc + ((i + 1) * desc_size));
 				d->next = next;
+				mono_lock_free_queue_node_init (&d->node, TRUE);
 				d = next;
 			}
 
@@ -142,8 +143,6 @@ desc_alloc (void)
 		if (success)
 			break;
 	}
-
-	ASSERT (ACTIVE_CREDITS (desc) == 0);
 
 	ASSERT (!desc->in_use);
 	desc->in_use = TRUE;
@@ -212,9 +211,21 @@ list_get_partial (SizeClass *sc)
 }
 
 static void
+desc_put_partial (gpointer _desc)
+{
+	Descriptor *desc = _desc;
+
+	ASSERT (desc->anchor.data.state != STATE_FULL);
+
+	mono_lock_free_queue_node_free (&desc->node);
+	mono_lock_free_queue_enqueue (&desc->heap->sc->partial, &desc->node);
+}
+
+static void
 list_put_partial (Descriptor *desc)
 {
-	mono_lock_free_queue_enqueue (&desc->heap->sc->partial, &desc->node);
+	ASSERT (desc->anchor.data.state != STATE_FULL);
+	mono_thread_hazardous_free_or_queue (desc, desc_put_partial);
 }
 
 static void
@@ -232,7 +243,8 @@ list_remove_empty_desc (SizeClass *sc)
 		if (desc->anchor.data.state == STATE_EMPTY) {
 			desc_retire (desc);
 		} else {
-			mono_lock_free_queue_enqueue (&sc->partial, &desc->node);
+			g_assert (desc->heap->sc == sc);
+			mono_thread_hazardous_free_or_queue (desc, desc_put_partial);
 			if (++num_non_empty >= 2)
 				return;
 		}
@@ -349,6 +361,7 @@ alloc_from_new_sb (ProcHeap *heap)
 
 	mono_memory_write_barrier ();
 
+	/* Make it active or free it again. */
 	if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, desc, NULL) == NULL) {
 		mono_memory_barrier ();
 		//g_print ("%p alloc new %p\n", (void*)pthread_self (), desc->sb);
@@ -582,7 +595,7 @@ heap_check_consistency (ProcHeap *heap)
 
 /* Test code */
 
-#if 1
+#ifdef TEST_ALLOC
 
 #define NUM_THREADS	4
 
