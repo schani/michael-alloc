@@ -108,7 +108,7 @@ static inline gint64 atomic64_cmpxchg(volatile gint64 *v, gint64 old, gint64 new
 	return (gint64) InterlockedCompareExchangePointer ((volatile gpointer*)v, (gpointer)new, (gpointer)old);
 }
 
-static inline gint64 atomic64_read (const gint64 *v)
+static inline gint64 atomic64_read (const volatile gint64 *v)
 {
 	return *v;
 }

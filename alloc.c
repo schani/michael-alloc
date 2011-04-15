@@ -295,7 +295,7 @@ alloc_from_active_or_partial (ProcHeap *heap)
 	do {
 		unsigned int next;
 
-		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
+		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((volatile gint64*)&desc->anchor);
 		if (old_anchor.data.state == STATE_EMPTY) {
 			/* We must free it because we own it. */
 			desc_retire (desc);
@@ -304,9 +304,9 @@ alloc_from_active_or_partial (ProcHeap *heap)
 		ASSERT (old_anchor.data.state == STATE_PARTIAL);
 		ASSERT (old_anchor.data.count > 0);
 
-		mono_memory_read_barrier ();
-
 		addr = (char*)desc->sb + old_anchor.data.avail * desc->slot_size;
+
+		mono_memory_read_barrier ();
 
 		next = *(unsigned int*)addr;
 		ASSERT (next < SB_USABLE_SIZE / desc->slot_size);
@@ -324,9 +324,6 @@ alloc_from_active_or_partial (ProcHeap *heap)
 		if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, desc, NULL) != NULL)
 			heap_put_partial (desc);
 	}
-
-	mono_memory_barrier ();
-	//g_print ("%p alloc active %p\n", (void*)pthread_self (), addr);
 
 	return addr;
 }
@@ -363,8 +360,6 @@ alloc_from_new_sb (ProcHeap *heap)
 
 	/* Make it active or free it again. */
 	if (InterlockedCompareExchangePointer ((gpointer * volatile)&heap->active, desc, NULL) == NULL) {
-		mono_memory_barrier ();
-		//g_print ("%p alloc new %p\n", (void*)pthread_self (), desc->sb);
 		return desc->sb;
 	} else {
 		desc->anchor.data.state = STATE_EMPTY;
@@ -435,9 +430,6 @@ mono_lock_free_free (gpointer ptr, size_t size)
 	gpointer sb;
 	ProcHeap *heap = NULL;
 
-	mono_memory_barrier ();
-	//g_print ("%p free %p\n", (void*)pthread_self (), ptr);
-
 	if (size > MAX_SMALL_SIZE) {
 		mono_sgen_free_os_memory (ptr, size);
 		return;
@@ -453,7 +445,7 @@ mono_lock_free_free (gpointer ptr, size_t size)
 #endif
 
 	do {
-		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((gint64*)&desc->anchor);
+		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((volatile gint64*)&desc->anchor);
 		*(unsigned int*)ptr = old_anchor.data.avail;
 		new_anchor.data.avail = ((char*)ptr - (char*)sb) / desc->slot_size;
 		ASSERT (new_anchor.data.avail < SB_USABLE_SIZE / desc->slot_size);
@@ -463,11 +455,8 @@ mono_lock_free_free (gpointer ptr, size_t size)
 
 		if (++new_anchor.data.count == desc->max_count) {
 			heap = desc->heap;
-			mono_memory_barrier ();
 			new_anchor.data.state = STATE_EMPTY;
 		}
-
-		mono_memory_write_barrier ();
 	} while (!set_anchor (desc, old_anchor, new_anchor));
 
 	if (new_anchor.data.state == STATE_EMPTY) {
