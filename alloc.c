@@ -485,7 +485,6 @@ mono_lock_free_free (gpointer ptr, size_t size)
 	}
 }
 
-#ifdef LAST_BYTE_DEBUG
 #define ASSERT_OR_PRINT(c, format, ...)	do {				\
 		if (!(c)) {						\
 			if (print)					\
@@ -549,7 +548,9 @@ descriptor_check_consistency (Descriptor *desc, gboolean print)
 		ASSERT_OR_PRINT (!linked [index], "%dth available slot %d linked twice\n", i, index);
 		if (linked [index])
 			break;
+#ifdef LAST_BYTE_DEBUG
 		ASSERT_OR_PRINT (!LAST_BYTE (addr, desc->slot_size), "debug byte on %dth available slot %d set\n", i, index);
+#endif
 		linked [index] = TRUE;
 		last = index;
 		index = *(unsigned int*)addr;
@@ -559,7 +560,9 @@ descriptor_check_consistency (Descriptor *desc, gboolean print)
 		gpointer addr = (char*)desc->sb + i * desc->slot_size;
 		if (linked [i])
 			continue;
+#ifdef LAST_BYTE_DEBUG
 		ASSERT_OR_PRINT (LAST_BYTE (addr, desc->slot_size), "debug byte on non-available slot %d not set\n", i);
+#endif
 	}
 }
 
@@ -580,7 +583,6 @@ heap_check_consistency (ProcHeap *heap)
 	g_print ("heap consistent\n");
 	exit (0);
 }
-#endif
 
 /* Test code */
 
