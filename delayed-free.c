@@ -1,40 +1,129 @@
+#include <glib.h>
+
+#include "metadata.h"
+#include "mono-mmap.h"
+#include "atomic.h"
+#include "mono-membar.h"
+
 #include "delayed-free.h"
 
-static CRITICAL_SECTION delayed_free_table_mutex;
-static GArray *delayed_free_table = NULL;
+enum {
+	STATE_FREE,
+	STATE_USED,
+	STATE_BUSY
+};
+
+typedef struct {
+	gint32 state;
+	MonoDelayedFreeItem item;
+} Entry;
+
+typedef struct _Chunk Chunk;
+struct _Chunk {
+	Chunk *next;
+	gint32 num_entries;
+	Entry entries [MONO_ZERO_LEN_ARRAY];
+};
+
+static volatile gint32 num_used_entries;
+static Chunk *chunk_list;
+
+static long long stat_delayed_free_sleep;
+
+static Chunk*
+alloc_chunk (void)
+{
+	int size = mono_pagesize ();
+	int num_entries = (size - (sizeof (Chunk) - sizeof (Entry) * MONO_ZERO_LEN_ARRAY)) / sizeof (Entry);
+	Chunk *chunk = mono_valloc (0, size, MONO_MMAP_READ | MONO_MMAP_WRITE);
+	chunk->num_entries = num_entries;
+	return chunk;
+}
+
+void
+free_chunk (Chunk *chunk)
+{
+	mono_vfree (chunk, mono_pagesize ());
+}
+
+static Entry*
+get_entry (int index)
+{
+	Chunk *chunk;
+
+	g_assert (index >= 0);
+
+	if (!chunk_list) {
+		chunk = alloc_chunk ();
+		if (InterlockedCompareExchangePointer ((volatile gpointer *)&chunk_list, chunk, NULL) != NULL)
+			free_chunk (chunk);
+	}
+
+	chunk = chunk_list;
+	g_assert (chunk);
+
+	while (index >= chunk->num_entries) {
+		Chunk *next = chunk->next;
+		if (!next) {
+			next = alloc_chunk ();
+			if (InterlockedCompareExchangePointer ((volatile gpointer *) &chunk->next, next, NULL) != NULL) {
+				free_chunk (next);
+				next = chunk->next;
+				g_assert (next);
+			}
+		}
+		index -= chunk->num_entries;
+		chunk = next;
+	}
+
+	return &chunk->entries [index];
+}
 
 void
 mono_delayed_free_push (MonoDelayedFreeItem item)
 {
-	EnterCriticalSection (&delayed_free_table_mutex);
-	g_array_append_val (delayed_free_table, item);
-	LeaveCriticalSection (&delayed_free_table_mutex);
+	int index = InterlockedIncrement (&num_used_entries) - 1;
+	Entry *entry = get_entry (index);
+
+	while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_FREE) != STATE_FREE) {
+		usleep (50);
+		++stat_delayed_free_sleep;
+	}
+
+	entry->item = item;
+	mono_memory_write_barrier ();
+	entry->state = STATE_USED;
 }
 
 gboolean
 mono_delayed_free_pop (MonoDelayedFreeItem *item)
 {
-	gboolean result = FALSE;
+	int index;
+	Entry *entry;
 
-	if (delayed_free_table->len == 0)
-		return FALSE;
+	do {
+		index = num_used_entries;
+		if (index == 0)
+			return FALSE;
+	} while (InterlockedCompareExchange (&num_used_entries, index - 1, index) != index);
 
-	EnterCriticalSection (&delayed_free_table_mutex);
+	--index;
 
-	if (delayed_free_table->len > 0) {
-		*item = g_array_index (delayed_free_table, MonoDelayedFreeItem, delayed_free_table->len - 1);
-		g_array_remove_index_fast (delayed_free_table, delayed_free_table->len - 1);
-		result = TRUE;
+	entry = get_entry (index);
+
+	while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_USED) != STATE_USED) {
+		usleep (40);
+		++stat_delayed_free_sleep;
 	}
 
-	LeaveCriticalSection (&delayed_free_table_mutex);
+	*item = entry->item;
+	entry->state = STATE_FREE;
 
-	return result;
+	return TRUE;
 }
 
 void
-mono_delayed_free_init (void)
+mono_delayed_free_print_stats (void)
 {
-	pthread_mutex_init (&delayed_free_table_mutex, NULL);
-	delayed_free_table = g_array_new (FALSE, FALSE, sizeof (MonoDelayedFreeItem));
+	g_print ("delayed free sleep: %lld\n", stat_delayed_free_sleep);
 }

@@ -288,11 +288,11 @@ void
 mono_thread_hazardous_init (void)
 {
 	pthread_mutex_init (&small_id_mutex, NULL);
-	mono_delayed_free_init ();
 }
 
 void
 mono_thread_hazardous_print_stats (void)
 {
 	g_print ("hazardous pointers: %lld\n", mono_stats.hazardous_pointer_count);
+	mono_delayed_free_print_stats ();
 }
