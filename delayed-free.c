@@ -28,8 +28,6 @@ struct _Chunk {
 static volatile gint32 num_used_entries;
 static Chunk *chunk_list;
 
-static long long stat_delayed_free_sleep;
-
 static Chunk*
 alloc_chunk (void)
 {
@@ -85,10 +83,8 @@ mono_delayed_free_push (MonoDelayedFreeItem item)
 	int index = InterlockedIncrement (&num_used_entries) - 1;
 	Entry *entry = get_entry (index);
 
-	while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_FREE) != STATE_FREE) {
-		usleep (50);
-		++stat_delayed_free_sleep;
-	}
+	while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_FREE) != STATE_FREE)
+		;
 
 	entry->item = item;
 	mono_memory_write_barrier ();
@@ -111,21 +107,13 @@ mono_delayed_free_pop (MonoDelayedFreeItem *item)
 
 	entry = get_entry (index);
 
-	while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_USED) != STATE_USED) {
-		usleep (40);
-		++stat_delayed_free_sleep;
-	}
+	while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_USED) != STATE_USED)
+		;
 
 	*item = entry->item;
 	entry->state = STATE_FREE;
 
 	return TRUE;
-}
-
-void
-mono_delayed_free_print_stats (void)
-{
-	g_print ("delayed free sleep: %lld\n", stat_delayed_free_sleep);
 }
 
 #ifdef TEST_DELAYED_FREE
@@ -190,8 +178,6 @@ main (void)
 
 	for (i = 0; i < NUM_ENTRIES; ++i)
 		g_assert (!entries [i]);
-
-	mono_delayed_free_print_stats ();
 
 	return 0;
 }

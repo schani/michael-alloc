@@ -19,6 +19,4 @@ void mono_delayed_free_push (MonoDelayedFreeItem item);
 
 gboolean mono_delayed_free_pop (MonoDelayedFreeItem *item);
 
-void mono_delayed_free_print_stats (void);
-
 #endif

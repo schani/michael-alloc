@@ -294,5 +294,4 @@ void
 mono_thread_hazardous_print_stats (void)
 {
 	g_print ("hazardous pointers: %lld\n", mono_stats.hazardous_pointer_count);
-	mono_delayed_free_print_stats ();
 }
