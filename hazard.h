@@ -2,13 +2,12 @@
 #define __MONO_UTILS_HAZARD_H__
 
 #include <glib.h>
-#include <pthread.h>
+
+#include "delayed-free.h"
 
 typedef struct {
 	gpointer hazard_pointers [2];
 } MonoThreadHazardPointers;
-
-typedef void (*MonoHazardousFreeFunc) (gpointer p);
 
 void mono_thread_hazardous_free_or_queue (gpointer p, MonoHazardousFreeFunc free_func);
 void mono_thread_hazardous_try_free_all (void);
