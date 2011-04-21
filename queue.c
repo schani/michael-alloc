@@ -296,11 +296,11 @@ alloc_entry (TableEntry *e)
 	QueueEntry *qe;
 
 	if (e->mmap)
-		qe = mmap (NULL, getpagesize (), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		qe = mmap (NULL, getpagesize (), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 	else
 		qe = g_malloc0 (sizeof (QueueEntry));
 
-	mono_lock_free_queue_node_init (&qe->node);
+	mono_lock_free_queue_node_init (&qe->node, FALSE);
 
 	return qe;
 }
@@ -330,6 +330,7 @@ free_entry (void *data)
 	QueueEntry *e = data;
 	g_assert (e->table_entry->queue_entry == e);
 	e->table_entry->queue_entry = NULL;
+	mono_lock_free_queue_node_free (&e->node);
 	free_entry_memory (e, e->table_entry->mmap);
 }
 

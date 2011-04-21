@@ -171,12 +171,18 @@ is_pointer_hazardous (gpointer p)
 	return FALSE;
 }
 
-static __thread MonoInternalThread this_internal_thread;
+static pthread_key_t this_internal_thread_key;
 
 static MonoInternalThread*
 mono_thread_internal_current (void)
 {
-	return &this_internal_thread;
+	MonoInternalThread *internal = pthread_getspecific (this_internal_thread_key);
+	if (!internal) {
+		internal = malloc (sizeof (MonoInternalThread));
+		memset (internal, 0, sizeof (MonoInternalThread));
+		pthread_setspecific (this_internal_thread_key, internal);
+	}
+	return internal;
 }
 
 MonoThreadHazardPointers*
@@ -288,6 +294,7 @@ void
 mono_thread_hazardous_init (void)
 {
 	pthread_mutex_init (&small_id_mutex, NULL);
+	pthread_key_create (&this_internal_thread_key, NULL);
 }
 
 void
