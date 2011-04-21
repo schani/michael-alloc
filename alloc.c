@@ -11,7 +11,7 @@
 
 //#define DESC_AVAIL_DUMMY
 
-#define LAST_BYTE_DEBUG
+//#define LAST_BYTE_DEBUG
 
 #ifdef LAST_BYTE_DEBUG
 #define LAST_BYTE(p,s)	(*((unsigned char*)p + (s) - 1))
@@ -61,7 +61,7 @@ struct _Descriptor {
 
 #define NUM_DESC_BATCH	64
 
-#define SB_SIZE		4096
+#define SB_SIZE		16384
 #define SB_HEADER_SIZE	16
 #define SB_USABLE_SIZE	(SB_SIZE - SB_HEADER_SIZE)
 #define MAX_SMALL_SIZE	(8192 - 8)
@@ -368,7 +368,7 @@ alloc_from_new_sb (ProcHeap *heap)
 	}
 }
 
-#define TEST_SIZE	1024
+#define TEST_SIZE	64
 
 static SizeClass test_sc;
 static ProcHeap test_heap;
@@ -614,7 +614,7 @@ typedef struct {
 
 static ThreadData thread_datas [NUM_THREADS];
 
-#define NUM_ENTRIES	32
+#define NUM_ENTRIES	1024
 #define NUM_ITERATIONS	100000000
 
 static gpointer entries [NUM_ENTRIES];
