@@ -59,7 +59,6 @@ struct _MonoLockFreeAllocDescriptor {
 #define SB_SIZE		16384
 #define SB_HEADER_SIZE	16
 #define SB_USABLE_SIZE	(SB_SIZE - SB_HEADER_SIZE)
-#define MAX_SMALL_SIZE	(8192 - 8)
 
 #define SB_HEADER_FOR_ADDR(a)	((gpointer)((mword)(a) & ~(mword)(SB_SIZE-1)))
 #define DESCRIPTOR_FOR_ADDR(a)	(*(Descriptor**)SB_HEADER_FOR_ADDR (a))
@@ -535,6 +534,8 @@ mono_lock_free_allocator_check_consistency (MonoLockFreeAllocator *heap)
 void
 mono_lock_free_allocator_init_size_class (MonoLockFreeAllocSizeClass *sc, unsigned int slot_size)
 {
+	g_assert (slot_size <= SB_USABLE_SIZE / 2);
+
 	mono_lock_free_queue_init (&sc->partial);
 	sc->slot_size = slot_size;
 }
