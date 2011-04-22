@@ -26,4 +26,6 @@ typedef struct {
 gpointer mono_lock_free_alloc (MonoLockFreeAllocator *heap);
 void mono_lock_free_free (gpointer ptr);
 
+gboolean mono_lock_free_allocator_check_consistency (MonoLockFreeAllocator *heap);
+
 #endif
