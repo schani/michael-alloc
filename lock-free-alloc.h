@@ -9,7 +9,7 @@
 
 #include <glib.h>
 
-#include "queue.h"
+#include "lock-free-queue.h"
 
 typedef struct {
 	MonoLockFreeQueue partial;

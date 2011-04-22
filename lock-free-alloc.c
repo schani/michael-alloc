@@ -11,7 +11,7 @@
 #include "mono-membar.h"
 #include "hazard.h"
 #include "atomic.h"
-#include "queue.h"
+#include "lock-free-queue.h"
 #include "sgen-gc.h"
 
 #include "lock-free-alloc.h"

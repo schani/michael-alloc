@@ -4,7 +4,7 @@ TEST = -DTEST_ALLOC
 
 ALLOC_C = lock-free-alloc.c
 
-QUEUE = queue
+QUEUE = lock-free-queue
 #QUEUE = test-queue
 
 test : hazard.c $(QUEUE).c $(ALLOC_C) mono-mmap.c sgen-gc.c delayed-free.c test.c

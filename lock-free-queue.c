@@ -29,7 +29,7 @@
 #include "hazard.h"
 #include "atomic.h"
 
-#include "queue.h"
+#include "lock-free-queue.h"
 
 #define INVALID_NEXT	((void*)-1)
 #define END_MARKER	((void*)-2)
