@@ -531,3 +531,17 @@ mono_lock_free_allocator_check_consistency (MonoLockFreeAllocator *heap)
 	}
 	return TRUE;
 }
+
+void
+mono_lock_free_allocator_init_size_class (MonoLockFreeAllocSizeClass *sc, unsigned int slot_size)
+{
+	mono_lock_free_queue_init (&sc->partial);
+	sc->slot_size = slot_size;
+}
+
+void
+mono_lock_free_allocator_init_allocator (MonoLockFreeAllocator *heap, MonoLockFreeAllocSizeClass *sc)
+{
+	heap->sc = sc;
+	heap->active = NULL;
+}

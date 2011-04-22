@@ -14,9 +14,8 @@ static MonoLockFreeAllocator test_heap;
 static void
 init_heap (void)
 {
-	mono_lock_free_queue_init (&test_sc.partial);
-	test_sc.slot_size = TEST_SIZE;
-	test_heap.sc = &test_sc;
+	mono_lock_free_allocator_init_size_class (&test_sc, TEST_SIZE);
+	mono_lock_free_allocator_init_allocator (&test_heap, &test_sc);
 }
 
 #define NUM_THREADS	4

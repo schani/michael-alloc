@@ -23,6 +23,9 @@ typedef struct {
 	MonoLockFreeAllocSizeClass *sc;
 } MonoLockFreeAllocator;
 
+void mono_lock_free_allocator_init_size_class (MonoLockFreeAllocSizeClass *sc, unsigned int slot_size);
+void mono_lock_free_allocator_init_allocator (MonoLockFreeAllocator *heap, MonoLockFreeAllocSizeClass *sc);
+
 gpointer mono_lock_free_alloc (MonoLockFreeAllocator *heap);
 void mono_lock_free_free (gpointer ptr);
 
