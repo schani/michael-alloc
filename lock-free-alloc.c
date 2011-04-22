@@ -18,12 +18,6 @@
 
 //#define DESC_AVAIL_DUMMY
 
-//#define LAST_BYTE_DEBUG
-
-#ifdef LAST_BYTE_DEBUG
-#define LAST_BYTE(p,s)	(*((unsigned char*)p + (s) - 1))
-#endif
-
 enum {
 	STATE_FULL,
 	STATE_PARTIAL,
@@ -368,11 +362,6 @@ mono_lock_free_alloc (MonoLockFreeAllocator *heap)
 			break;
 	}
 
-#ifdef LAST_BYTE_DEBUG
-	g_assert (!LAST_BYTE (addr, heap->sc->slot_size));
-	LAST_BYTE (addr, heap->sc->slot_size) = 1;
-#endif
-
 	return addr;
 }
 
@@ -387,11 +376,6 @@ mono_lock_free_free (gpointer ptr)
 	desc = DESCRIPTOR_FOR_ADDR (ptr);
 	sb = desc->sb;
 	g_assert (SB_HEADER_FOR_ADDR (ptr) == SB_HEADER_FOR_ADDR (sb));
-
-#ifdef LAST_BYTE_DEBUG
-	g_assert (LAST_BYTE (ptr, desc->slot_size));
-	LAST_BYTE (ptr, desc->slot_size) = 0;
-#endif
 
 	do {
 		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((volatile gint64*)&desc->anchor);
@@ -497,21 +481,9 @@ descriptor_check_consistency (Descriptor *desc, gboolean print)
 		g_assert_OR_PRINT (!linked [index], "%dth available slot %d linked twice\n", i, index);
 		if (linked [index])
 			break;
-#ifdef LAST_BYTE_DEBUG
-		g_assert_OR_PRINT (!LAST_BYTE (addr, desc->slot_size), "debug byte on %dth available slot %d set\n", i, index);
-#endif
 		linked [index] = TRUE;
 		last = index;
 		index = *(unsigned int*)addr;
-	}
-
-	for (i = 0; i < max_count; ++i) {
-		gpointer addr = (char*)desc->sb + i * desc->slot_size;
-		if (linked [i])
-			continue;
-#ifdef LAST_BYTE_DEBUG
-		g_assert_OR_PRINT (LAST_BYTE (addr, desc->slot_size), "debug byte on non-available slot %d not set\n", i);
-#endif
 	}
 }
 
