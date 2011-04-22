@@ -211,3 +211,171 @@ main (void)
 }
 
 #endif
+
+#ifdef TEST_QUEUE
+
+#define NUM_ENTRIES	16
+#define NUM_ITERATIONS	10000000
+
+typedef struct _TableEntry TableEntry;
+
+typedef struct {
+	MonoLockFreeQueueNode node;
+	TableEntry *table_entry;
+} QueueEntry;
+
+struct _TableEntry {
+	gboolean mmap;
+	QueueEntry *queue_entry;
+};
+
+static MonoLockFreeQueue queue;
+static TableEntry entries [NUM_ENTRIES];
+
+static QueueEntry*
+alloc_entry (TableEntry *e)
+{
+	QueueEntry *qe;
+
+	if (e->mmap)
+		qe = mmap (NULL, getpagesize (), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+	else
+		qe = g_malloc0 (sizeof (QueueEntry));
+
+	mono_lock_free_queue_node_init (&qe->node, FALSE);
+
+	return qe;
+}
+
+static void
+free_entry_memory (QueueEntry *qe, gboolean mmap)
+{
+	if (mmap)
+		munmap (qe, getpagesize ());
+	else
+		g_free (qe);
+}
+
+#define NUM_THREADS	4
+
+typedef struct {
+	pthread_t thread;
+	int increment;
+	volatile gboolean have_attached;
+} ThreadData;
+
+static ThreadData thread_datas [NUM_THREADS];
+
+static void
+free_entry (void *data)
+{
+	QueueEntry *e = data;
+	g_assert (e->table_entry->queue_entry == e);
+	e->table_entry->queue_entry = NULL;
+	mono_lock_free_queue_node_free (&e->node);
+	free_entry_memory (e, e->table_entry->mmap);
+}
+
+static void
+wait_for_threads_to_attach (void)
+{
+	int i;
+ retry:
+	for (i = 0; i < NUM_THREADS; ++i) {
+		if (!thread_datas [i].have_attached) {
+			usleep (5000);
+			goto retry;
+		}
+	}
+}
+
+static void*
+thread_func (void *_data)
+{
+	ThreadData *data = _data;
+	int increment = data->increment;
+	int index;
+	int i;
+
+	mono_thread_attach ();
+	data->have_attached = TRUE;
+	wait_for_threads_to_attach ();
+
+	index = 0;
+	for (i = 0; i < NUM_ITERATIONS; ++i) {
+		TableEntry *e = &entries [index];
+
+		if (e->queue_entry) {
+			QueueEntry *qe = (QueueEntry*)mono_lock_free_queue_dequeue (&queue);
+			if (qe) {
+				/*
+				 * Calling free_entry() directly here
+				 * effectively disables hazardous
+				 * pointers.  The test will then crash
+				 * sooner or later.
+				 */
+				mono_thread_hazardous_free_or_queue (qe, free_entry);
+				//free_entry (qe);
+			}
+		} else {
+			QueueEntry *qe = alloc_entry (e);
+			qe->table_entry = e;
+			if (InterlockedCompareExchangePointer ((gpointer volatile*)&e->queue_entry, qe, NULL) == NULL) {
+				mono_lock_free_queue_enqueue (&queue, &qe->node);
+			} else {
+				qe->table_entry = NULL;
+				free_entry_memory (qe, e->mmap);
+			}
+		}
+
+		index += increment;
+		while (index >= NUM_ENTRIES)
+			index -= NUM_ENTRIES;
+	}
+
+	return NULL;
+}
+
+int
+main (void)
+{
+	QueueEntry *qe;
+	int i;
+
+	mono_thread_hazardous_init ();
+
+	mono_thread_attach ();
+
+	mono_lock_free_queue_init (&queue);
+
+	for (i = 0; i < NUM_ENTRIES; i += 97)
+		entries [i].mmap = TRUE;
+
+	thread_datas [0].increment = 1;
+	if (NUM_THREADS >= 2)
+		thread_datas [1].increment = 2;
+	if (NUM_THREADS >= 3)
+		thread_datas [2].increment = 3;
+	if (NUM_THREADS >= 4)
+		thread_datas [3].increment = 5;
+
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
+
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_join (thread_datas [i].thread, NULL);
+
+	mono_thread_hazardous_try_free_all ();
+
+	while ((qe = (QueueEntry*)mono_lock_free_queue_dequeue (&queue)))
+		free_entry (qe);
+
+	for (i = 0; i < NUM_ENTRIES; ++i)
+		g_assert (!entries [i].queue_entry);
+
+	mono_thread_hazardous_print_stats ();
+
+	return 0;
+}
+
+#endif
