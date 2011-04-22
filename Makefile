@@ -1,8 +1,8 @@
+#TEST = -DTEST_DELAYED_FREE
 #TEST = -DTEST_QUEUE
-#TEST = -DTEST_ALLOC
-TEST = -DTEST_DELAYED_FREE
+TEST = -DTEST_ALLOC
 
-ALLOC_C = alloc.c
+ALLOC_C = lock-free-alloc.c
 
 QUEUE = queue
 #QUEUE = test-queue

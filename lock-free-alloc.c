@@ -9,6 +9,8 @@
 #include "queue.h"
 #include "sgen-gc.h"
 
+#include "lock-free-alloc.h"
+
 //#define DESC_AVAIL_DUMMY
 
 //#define LAST_BYTE_DEBUG
@@ -43,12 +45,10 @@ typedef union {
 	} data;
 } Anchor;
 
-typedef struct _Descriptor Descriptor;
-typedef struct _ProcHeap ProcHeap;
-
-struct _Descriptor {
+typedef struct _MonoLockFreeAllocDescriptor Descriptor;
+struct _MonoLockFreeAllocDescriptor {
 	MonoLockFreeQueueNode node;
-	ProcHeap *heap;
+	MonoLockFreeAllocator *heap;
 	Anchor anchor;
 	unsigned int slot_size;
 	unsigned int max_count;
@@ -68,16 +68,6 @@ struct _Descriptor {
 
 #define SB_HEADER_FOR_ADDR(a)	((gpointer)((mword)(a) & ~(mword)(SB_SIZE-1)))
 #define DESCRIPTOR_FOR_ADDR(a)	(*(Descriptor**)SB_HEADER_FOR_ADDR (a))
-
-typedef struct {
-	MonoLockFreeQueue partial;
-	unsigned int slot_size;
-} SizeClass;
-
-struct _ProcHeap {
-	Descriptor *active;
-	SizeClass *sc;
-};
 
 static gpointer
 alloc_sb (Descriptor *desc)
@@ -198,7 +188,7 @@ desc_retire (Descriptor *desc)
 #endif
 
 static Descriptor*
-list_get_partial (SizeClass *sc)
+list_get_partial (MonoLockFreeAllocSizeClass *sc)
 {
 	for (;;) {
 		Descriptor *desc = (Descriptor*) mono_lock_free_queue_dequeue (&sc->partial);
@@ -229,7 +219,7 @@ list_put_partial (Descriptor *desc)
 }
 
 static void
-list_remove_empty_desc (SizeClass *sc)
+list_remove_empty_desc (MonoLockFreeAllocSizeClass *sc)
 {
 	int num_non_empty = 0;
 	for (;;) {
@@ -252,7 +242,7 @@ list_remove_empty_desc (SizeClass *sc)
 }
 
 static Descriptor*
-heap_get_partial (ProcHeap *heap)
+heap_get_partial (MonoLockFreeAllocator *heap)
 {
 	return list_get_partial (heap->sc);
 }
@@ -273,7 +263,7 @@ set_anchor (Descriptor *desc, Anchor old_anchor, Anchor new_anchor)
 }
 
 static gpointer
-alloc_from_active_or_partial (ProcHeap *heap)
+alloc_from_active_or_partial (MonoLockFreeAllocator *heap)
 {
 	Descriptor *desc;
 	Anchor old_anchor, new_anchor;
@@ -329,7 +319,7 @@ alloc_from_active_or_partial (ProcHeap *heap)
 }
 
 static gpointer
-alloc_from_new_sb (ProcHeap *heap)
+alloc_from_new_sb (MonoLockFreeAllocator *heap)
 {
 	unsigned int slot_size, count, i;
 	Descriptor *desc = desc_alloc ();
@@ -370,8 +360,8 @@ alloc_from_new_sb (ProcHeap *heap)
 
 #define TEST_SIZE	64
 
-static SizeClass test_sc;
-static ProcHeap test_heap;
+static MonoLockFreeAllocSizeClass test_sc;
+static MonoLockFreeAllocator test_heap;
 
 static void
 init_heap (void)
@@ -381,7 +371,7 @@ init_heap (void)
 	test_heap.sc = &test_sc;
 }
 
-static ProcHeap*
+static MonoLockFreeAllocator*
 find_heap (size_t size)
 {
 	ASSERT (size <= TEST_SIZE);
@@ -394,7 +384,7 @@ find_heap (size_t size)
 gpointer
 mono_lock_free_alloc (size_t size)
 {
-	ProcHeap *heap;
+	MonoLockFreeAllocator *heap;
 	gpointer addr;
 
 	if (size > MAX_SMALL_SIZE)
@@ -428,7 +418,7 @@ mono_lock_free_free (gpointer ptr, size_t size)
 	Anchor old_anchor, new_anchor;
 	Descriptor *desc;
 	gpointer sb;
-	ProcHeap *heap = NULL;
+	MonoLockFreeAllocator *heap = NULL;
 
 	if (size > MAX_SMALL_SIZE) {
 		mono_sgen_free_os_memory (ptr, size);
@@ -567,7 +557,7 @@ descriptor_check_consistency (Descriptor *desc, gboolean print)
 }
 
 static void
-heap_check_consistency (ProcHeap *heap)
+heap_check_consistency (MonoLockFreeAllocator *heap)
 {
 	Descriptor *active = heap->active;
 	Descriptor *desc;
