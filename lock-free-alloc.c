@@ -1,3 +1,9 @@
+/*
+ * lock-free-alloc.c: Lock free allocator.
+ *
+ * (C) Copyright 2011 Novell, Inc
+ */
+
 #include <glib.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -371,27 +377,10 @@ init_heap (void)
 	test_heap.sc = &test_sc;
 }
 
-static MonoLockFreeAllocator*
-find_heap (size_t size)
-{
-	ASSERT (size <= TEST_SIZE);
-
-	ASSERT (test_heap.sc == &test_sc);
-
-	return &test_heap;
-}
-
 gpointer
-mono_lock_free_alloc (size_t size)
+mono_lock_free_alloc (MonoLockFreeAllocator *heap)
 {
-	MonoLockFreeAllocator *heap;
 	gpointer addr;
-
-	if (size > MAX_SMALL_SIZE)
-		return mono_sgen_alloc_os_memory (size, TRUE);
-
-	heap = find_heap (size);
-	ASSERT (heap);
 
 	for (;;) {
 
@@ -413,17 +402,12 @@ mono_lock_free_alloc (size_t size)
 }
 
 void
-mono_lock_free_free (gpointer ptr, size_t size)
+mono_lock_free_free (gpointer ptr)
 {
 	Anchor old_anchor, new_anchor;
 	Descriptor *desc;
 	gpointer sb;
 	MonoLockFreeAllocator *heap = NULL;
-
-	if (size > MAX_SMALL_SIZE) {
-		mono_sgen_free_os_memory (ptr, size);
-		return;
-	}
 
 	desc = DESCRIPTOR_FOR_ADDR (ptr);
 	sb = desc->sb;
@@ -696,11 +680,11 @@ thread_func (void *_data)
 				goto retry;
 			ASSERT (*(int*)p == index << 10);
 			*(int*)p = -1;
-			mono_lock_free_free (p, TEST_SIZE);
+			mono_lock_free_free (p);
 
 			log_action (data, ACTION_FREE, index, p);
 		} else {
-			p = mono_lock_free_alloc (TEST_SIZE);
+			p = mono_lock_free_alloc (&test_heap);
 
 			/*
 			int j;
@@ -716,7 +700,7 @@ thread_func (void *_data)
 			if (InterlockedCompareExchangePointer ((gpointer * volatile)&entries [index], p, NULL) != NULL) {
 				//g_print ("immediate free %p\n", p);
 				*(int*)p = -1;
-				mono_lock_free_free (p, TEST_SIZE);
+				mono_lock_free_free (p);
 
 				log_action (data, ACTION_FREE, index, p);
 
@@ -752,7 +736,7 @@ main (void)
 	mono_thread_attach ();
 
 	init_heap ();
-	mono_lock_free_alloc (TEST_SIZE);
+	mono_lock_free_alloc (&test_heap);
 
 	thread_datas [0].increment = 1;
 	if (NUM_THREADS >= 2)

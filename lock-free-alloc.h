@@ -7,6 +7,8 @@
 #ifndef __MONO_LOCKFREEALLOC_H__
 #define __MONO_LOCKFREEALLOC_H__
 
+#include <glib.h>
+
 #include "queue.h"
 
 typedef struct {
@@ -20,5 +22,8 @@ typedef struct {
 	struct _MonoLockFreeAllocDescriptor *active;
 	MonoLockFreeAllocSizeClass *sc;
 } MonoLockFreeAllocator;
+
+gpointer mono_lock_free_alloc (MonoLockFreeAllocator *heap);
+void mono_lock_free_free (gpointer ptr);
 
 #endif
