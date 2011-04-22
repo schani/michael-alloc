@@ -1,7 +1,7 @@
 #ifndef __MONO_UTILS_QUEUE_H__
 #define __MONO_UTILS_QUEUE_H__
 
-#define QUEUE_DEBUG	1
+//#define QUEUE_DEBUG	1
 
 typedef struct _MonoLockFreeQueueNode MonoLockFreeQueueNode;
 
