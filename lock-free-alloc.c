@@ -25,12 +25,11 @@ enum {
 };
 
 typedef union {
-	guint64 value;
+	gint32 value;
 	struct {
-		guint64 avail : 10;
-		guint64 count : 10;
-		guint64 state : 2;
-		guint64 tag : 42;
+		guint32 avail : 10;
+		guint32 count : 10;
+		guint32 state : 2;
 	} data;
 } Anchor;
 
@@ -247,7 +246,7 @@ set_anchor (Descriptor *desc, Anchor old_anchor, Anchor new_anchor)
 	if (old_anchor.data.state == STATE_EMPTY)
 		g_assert (new_anchor.data.state == STATE_EMPTY);
 
-	return atomic64_cmpxchg ((volatile gint64*)&desc->anchor.value, old_anchor.value, new_anchor.value) == old_anchor.value;
+	return InterlockedCompareExchange (&desc->anchor.value, new_anchor.value, old_anchor.value) == old_anchor.value;
 }
 
 static gpointer
@@ -273,7 +272,7 @@ alloc_from_active_or_partial (MonoLockFreeAllocator *heap)
 	do {
 		unsigned int next;
 
-		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((volatile gint64*)&desc->anchor);
+		new_anchor = old_anchor = (Anchor)*(volatile gint32*)&desc->anchor.value;
 		if (old_anchor.data.state == STATE_EMPTY) {
 			/* We must free it because we own it. */
 			desc_retire (desc);
@@ -291,7 +290,6 @@ alloc_from_active_or_partial (MonoLockFreeAllocator *heap)
 
 		new_anchor.data.avail = next;
 		--new_anchor.data.count;
-		++new_anchor.data.tag;
 
 		if (new_anchor.data.count == 0)
 			new_anchor.data.state = STATE_FULL;
@@ -327,7 +325,6 @@ alloc_from_new_sb (MonoLockFreeAllocator *heap)
 	 * right away.
 	 */
 	desc->anchor.data.avail = 1;
-	desc->anchor.data.tag = 0;
 	desc->slot_size = heap->sc->slot_size;
 	desc->max_count = count;
 
@@ -378,7 +375,7 @@ mono_lock_free_free (gpointer ptr)
 	g_assert (SB_HEADER_FOR_ADDR (ptr) == SB_HEADER_FOR_ADDR (sb));
 
 	do {
-		new_anchor = old_anchor = (Anchor)(guint64)atomic64_read ((volatile gint64*)&desc->anchor);
+		new_anchor = old_anchor = (Anchor)*(volatile gint32*)&desc->anchor.value;
 		*(unsigned int*)ptr = old_anchor.data.avail;
 		new_anchor.data.avail = ((char*)ptr - (char*)sb) / desc->slot_size;
 		g_assert (new_anchor.data.avail < SB_USABLE_SIZE / desc->slot_size);
