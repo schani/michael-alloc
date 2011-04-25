@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <sys/mman.h>
 
 #include "hazard.h"
 #include "atomic.h"
@@ -214,6 +215,14 @@ main (void)
 
 #ifdef TEST_QUEUE
 
+typedef struct {
+	pthread_t thread;
+	int increment;
+	gint32 next_enqueue_counter;
+	gint32 last_dequeue_counter;
+	volatile gboolean have_attached;
+} ThreadData;
+
 #define NUM_ENTRIES	16
 #define NUM_ITERATIONS	10000000
 
@@ -222,6 +231,8 @@ typedef struct _TableEntry TableEntry;
 typedef struct {
 	MonoLockFreeQueueNode node;
 	TableEntry *table_entry;
+	ThreadData *thread_data;
+	gint32 counter;
 } QueueEntry;
 
 struct _TableEntry {
@@ -233,7 +244,7 @@ static MonoLockFreeQueue queue;
 static TableEntry entries [NUM_ENTRIES];
 
 static QueueEntry*
-alloc_entry (TableEntry *e)
+alloc_entry (TableEntry *e, ThreadData *thread_data)
 {
 	QueueEntry *qe;
 
@@ -243,6 +254,9 @@ alloc_entry (TableEntry *e)
 		qe = g_malloc0 (sizeof (QueueEntry));
 
 	mono_lock_free_queue_node_init (&qe->node, FALSE);
+
+	qe->thread_data = thread_data;
+	qe->counter = thread_data->next_enqueue_counter++;
 
 	return qe;
 }
@@ -257,12 +271,6 @@ free_entry_memory (QueueEntry *qe, gboolean mmap)
 }
 
 #define NUM_THREADS	4
-
-typedef struct {
-	pthread_t thread;
-	int increment;
-	volatile gboolean have_attached;
-} ThreadData;
 
 static ThreadData thread_datas [NUM_THREADS];
 
@@ -308,6 +316,11 @@ thread_func (void *_data)
 		if (e->queue_entry) {
 			QueueEntry *qe = (QueueEntry*)mono_lock_free_queue_dequeue (&queue);
 			if (qe) {
+				if (qe->thread_data == data) {
+					g_assert (qe->counter > data->last_dequeue_counter);
+					data->last_dequeue_counter = qe->counter;
+				}
+
 				/*
 				 * Calling free_entry() directly here
 				 * effectively disables hazardous
@@ -318,7 +331,7 @@ thread_func (void *_data)
 				//free_entry (qe);
 			}
 		} else {
-			QueueEntry *qe = alloc_entry (e);
+			QueueEntry *qe = alloc_entry (e, data);
 			qe->table_entry = e;
 			if (InterlockedCompareExchangePointer ((gpointer volatile*)&e->queue_entry, qe, NULL) == NULL) {
 				mono_lock_free_queue_enqueue (&queue, &qe->node);
@@ -348,8 +361,10 @@ main (void)
 
 	mono_lock_free_queue_init (&queue);
 
+	/*
 	for (i = 0; i < NUM_ENTRIES; i += 97)
 		entries [i].mmap = TRUE;
+	*/
 
 	thread_datas [0].increment = 1;
 	if (NUM_THREADS >= 2)
@@ -359,8 +374,10 @@ main (void)
 	if (NUM_THREADS >= 4)
 		thread_datas [3].increment = 5;
 
-	for (i = 0; i < NUM_THREADS; ++i)
+	for (i = 0; i < NUM_THREADS; ++i) {
+		thread_datas [i].last_dequeue_counter = -1;
 		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
+	}
 
 	for (i = 0; i < NUM_THREADS; ++i)
 		pthread_join (thread_datas [i].thread, NULL);
