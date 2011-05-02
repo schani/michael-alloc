@@ -179,7 +179,7 @@ main (void)
 {
 	int i;
 
-	mono_thread_hazardous_init ();
+	mono_thread_smr_init ();
 
 	mono_thread_attach ();
 
@@ -355,7 +355,7 @@ main (void)
 	QueueEntry *qe;
 	int i;
 
-	mono_thread_hazardous_init ();
+	mono_thread_smr_init ();
 
 	mono_thread_attach ();
 

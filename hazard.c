@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "mono-membar.h"
+#include "delayed-free.h"
 #include "mono-mmap.h"
 #include "hazard.h"
 
@@ -131,8 +132,8 @@ small_id_alloc (MonoInternalThread *thread)
 
 #endif
 		g_assert (id < hazard_table_size);
-		hazard_table [id].hazard_pointers [0] = NULL;
-		hazard_table [id].hazard_pointers [1] = NULL;
+		for (i = 0; i < HAZARD_POINTER_COUNT; ++i)
+			hazard_table [id].hazard_pointers [i] = NULL;
 	}
 
 	if (id > highest_small_id) {
@@ -256,7 +257,7 @@ mono_thread_hazardous_try_free_all (void)
    mono_jit_info_table_add(), which doesn't have to care about hazards
    because it holds the respective domain lock. */
 gpointer
-mono_thread_hazardous_load (gpointer volatile *pp, MonoThreadHazardPointers *hp, int hazard_index)
+get_hazardous_pointer (gpointer volatile *pp, MonoThreadHazardPointers *hp, int hazard_index)
 {
 	gpointer p;
 
@@ -291,7 +292,7 @@ mono_thread_attach (void)
 }
 
 void
-mono_thread_hazardous_init (void)
+mono_thread_smr_init (void)
 {
 	pthread_mutex_init (&small_id_mutex, NULL);
 	pthread_key_create (&this_internal_thread_key, NULL);

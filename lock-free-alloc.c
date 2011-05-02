@@ -87,7 +87,7 @@ desc_alloc (void)
 	for (;;) {
 		gboolean success;
 
-		desc = mono_thread_hazardous_load ((gpointer * volatile)&desc_avail, hp, 1);
+		desc = get_hazardous_pointer ((gpointer * volatile)&desc_avail, hp, 1);
 		if (desc) {
 			Descriptor *next = desc->next;
 			success = (InterlockedCompareExchangePointer ((gpointer * volatile)&desc_avail, next, desc) == desc);
