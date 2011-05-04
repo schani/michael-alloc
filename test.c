@@ -1,9 +1,11 @@
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 
 #include "hazard.h"
 #include "atomic.h"
 #include "lock-free-alloc.h"
+#include "mono-linked-list-set.h"
 
 #ifdef TEST_ALLOC
 #define USE_SMR
@@ -20,6 +22,7 @@ typedef struct {
 	pthread_t thread;
 	int increment;
 	volatile gboolean have_attached;
+
 	ThreadAction action_buffer [ACTION_BUFFER_SIZE];
 	int next_action_index;
 } ThreadData;
@@ -33,12 +36,23 @@ typedef struct {
 	pthread_t thread;
 	int increment;
 	volatile gboolean have_attached;
+
 	gint32 next_enqueue_counter;
 	gint32 last_dequeue_counter;
 } ThreadData;
 #endif
 
 #ifdef TEST_DELAYED_FREE
+typedef struct {
+	pthread_t thread;
+	int increment;
+	volatile gboolean have_attached;
+} ThreadData;
+#endif
+
+#ifdef TEST_LLS
+#define USE_SMR
+
 typedef struct {
 	pthread_t thread;
 	int increment;
@@ -421,6 +435,122 @@ test_finish (void)
 
 	for (i = 0; i < NUM_ENTRIES; ++i)
 		g_assert (!entries [i]);
+
+	return TRUE;
+}
+#endif
+
+#ifdef TEST_LLS
+enum {
+	STATE_FREE,
+	STATE_ALLOCING,
+	STATE_FREEING,
+	STATE_USED
+};
+
+#define NUM_ENTRIES	32
+#define NUM_ITERATIONS	1000000
+
+static gint32 entries [NUM_ENTRIES];
+
+static MonoLinkedListSet list;
+
+static void
+free_node_func (void *_node)
+{
+	MonoLinkedListSetNode *node = _node;
+	int index = node->key >> 2;
+	g_assert (index >= 0 && index < NUM_ENTRIES);
+	if (InterlockedCompareExchange (&entries [index], STATE_FREE, STATE_FREEING) != STATE_FREEING)
+		g_assert_not_reached ();
+	free (node);
+}
+
+static void*
+thread_func (void *_data)
+{
+	ThreadData *data = _data;
+	int increment = data->increment;
+	MonoThreadHazardPointers *hp;
+	int index, i;
+	gboolean result;
+
+	attach_and_wait_for_threads_to_attach (data);
+
+	hp = mono_hazard_pointer_get ();
+
+	index = 0;
+	for (i = 0; i < NUM_ITERATIONS; ++i) {
+		gint32 state = entries [index];
+
+		if (state == STATE_FREE) {
+			if (InterlockedCompareExchange (&entries [index], STATE_ALLOCING, STATE_FREE) == STATE_FREE) {
+				MonoLinkedListSetNode *node = malloc (sizeof (MonoLinkedListSetNode));
+				node->key = index << 2;
+
+				result = mono_lls_insert (&list, hp, node);
+				g_assert (result);
+
+				if (InterlockedCompareExchange (&entries [index], STATE_USED, STATE_ALLOCING) != STATE_ALLOCING)
+					g_assert_not_reached ();
+
+				mono_hazard_pointer_clear (hp, 0);
+				mono_hazard_pointer_clear (hp, 1);
+				mono_hazard_pointer_clear (hp, 2);
+			}
+		} else if (state == STATE_USED) {
+			if (InterlockedCompareExchange (&entries [index], STATE_FREEING, STATE_USED) == STATE_USED) {
+				MonoLinkedListSetNode *node;
+
+				result = mono_lls_find (&list, hp, index << 2);
+				g_assert (result);
+
+				node = mono_hazard_pointer_get_val (hp, 1);
+
+				mono_hazard_pointer_clear (hp, 0);
+				mono_hazard_pointer_clear (hp, 1);
+				mono_hazard_pointer_clear (hp, 2);
+
+				result = mono_lls_remove (&list, hp, node);
+				g_assert (result);
+
+				mono_hazard_pointer_clear (hp, 0);
+				mono_hazard_pointer_clear (hp, 1);
+				mono_hazard_pointer_clear (hp, 2);
+			}
+		} else {
+			mono_thread_hazardous_try_free_all ();
+		}
+
+		index += increment;
+		while (index >= NUM_ENTRIES)
+			index -= NUM_ENTRIES;
+	}
+
+	return NULL;
+}
+
+static void
+test_init (void)
+{
+	mono_lls_init (&list, free_node_func);
+}
+
+static gboolean
+test_finish (void)
+{
+	MonoLinkedListSetNode *node;
+	int i;
+
+	MONO_LLS_FOREACH ((&list), node)
+		int index = node->key >> 2;
+		g_assert (index >= 0 && index < NUM_ENTRIES);
+		g_assert (entries [index] == STATE_USED);
+		entries [index] = STATE_FREE;
+	MONO_LLS_END_FOREACH
+
+	for (i = 0; i < NUM_ENTRIES; ++i)
+		g_assert (entries [i] == STATE_FREE);
 
 	return TRUE;
 }
