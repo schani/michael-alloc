@@ -98,13 +98,15 @@ mono_delayed_free_push (MonoDelayedFreeItem item)
 
 	entry->state = STATE_USED;
 
-	mono_memory_write_barrier ();
+	mono_memory_barrier ();
 
 	do {
 		num_used = num_used_entries;
 		if (num_used > index)
 			break;
 	} while (InterlockedCompareExchange (&num_used_entries, index + 1, num_used) != num_used);
+
+	mono_memory_write_barrier ();
 }
 
 gboolean
@@ -123,13 +125,15 @@ mono_delayed_free_pop (MonoDelayedFreeItem *item)
 		entry = get_entry (index - 1);
 	} while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_USED) != STATE_USED);
 
-	mono_memory_barrier ();
+	mono_memory_write_barrier ();
 
 	*item = entry->item;
 
 	mono_memory_barrier ();
 
 	entry->state = STATE_FREE;
+
+	mono_memory_write_barrier ();
 
 	return TRUE;
 }
