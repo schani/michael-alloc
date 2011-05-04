@@ -5,7 +5,55 @@
 #include "atomic.h"
 #include "lock-free-alloc.h"
 
+#ifdef TEST_ALLOC
+#define ACTION_BUFFER_SIZE	16
+
+typedef struct {
+	int action;
+	int index;
+	gpointer p;
+} ThreadAction;
+
+typedef struct {
+	pthread_t thread;
+	int increment;
+	volatile gboolean have_attached;
+	ThreadAction action_buffer [ACTION_BUFFER_SIZE];
+	int next_action_index;
+} ThreadData;
+
+#endif
+
+#ifdef TEST_QUEUE
+typedef struct {
+	pthread_t thread;
+	int increment;
+	gint32 next_enqueue_counter;
+	gint32 last_dequeue_counter;
+	volatile gboolean have_attached;
+} ThreadData;
+#endif
+
 #define NUM_THREADS	4
+
+static ThreadData thread_datas [NUM_THREADS];
+
+static void
+attach_and_wait_for_threads_to_attach (ThreadData *data)
+{
+	int i;
+
+	mono_thread_attach ();
+	data->have_attached = TRUE;
+
+ retry:
+	for (i = 0; i < NUM_THREADS; ++i) {
+		if (!thread_datas [i].have_attached) {
+			usleep (5000);
+			goto retry;
+		}
+	}
+}
 
 #ifdef TEST_ALLOC
 
@@ -26,24 +74,6 @@ enum {
 	ACTION_ALLOC,
 	ACTION_FREE
 };
-
-#define ACTION_BUFFER_SIZE	16
-
-typedef struct {
-	int action;
-	int index;
-	gpointer p;
-} ThreadAction;
-
-typedef struct {
-	pthread_t thread;
-	int increment;
-	volatile gboolean have_attached;
-	ThreadAction action_buffer [ACTION_BUFFER_SIZE];
-	int next_action_index;
-} ThreadData;
-
-static ThreadData thread_datas [NUM_THREADS];
 
 #define NUM_ENTRIES	1024
 #define NUM_ITERATIONS	100000000
@@ -96,19 +126,6 @@ dump_action_logs (void)
 	}
 }
 
-static void
-wait_for_threads_to_attach (void)
-{
-	int i;
- retry:
-	for (i = 0; i < NUM_THREADS; ++i) {
-		if (!thread_datas [i].have_attached) {
-			usleep (5000);
-			goto retry;
-		}
-	}
-}
-
 static void*
 thread_func (void *_data)
 {
@@ -116,9 +133,7 @@ thread_func (void *_data)
 	int increment = data->increment;
 	int i, index;
 
-	mono_thread_attach ();
-	data->have_attached = TRUE;
-	wait_for_threads_to_attach ();
+	attach_and_wait_for_threads_to_attach (data);
 
 	index = 0;
 	for (i = 0; i < NUM_ITERATIONS; ++i) {
@@ -195,14 +210,6 @@ test_finish (void)
 
 #ifdef TEST_QUEUE
 
-typedef struct {
-	pthread_t thread;
-	int increment;
-	gint32 next_enqueue_counter;
-	gint32 last_dequeue_counter;
-	volatile gboolean have_attached;
-} ThreadData;
-
 #define NUM_ENTRIES	16
 #define NUM_ITERATIONS	10000000
 
@@ -262,19 +269,6 @@ free_entry (void *data)
 	free_entry_memory (e, e->table_entry->mmap);
 }
 
-static void
-wait_for_threads_to_attach (void)
-{
-	int i;
- retry:
-	for (i = 0; i < NUM_THREADS; ++i) {
-		if (!thread_datas [i].have_attached) {
-			usleep (5000);
-			goto retry;
-		}
-	}
-}
-
 static void*
 thread_func (void *_data)
 {
@@ -283,9 +277,7 @@ thread_func (void *_data)
 	int index;
 	int i;
 
-	mono_thread_attach ();
-	data->have_attached = TRUE;
-	wait_for_threads_to_attach ();
+	attach_and_wait_for_threads_to_attach (data);
 
 	index = 0;
 	for (i = 0; i < NUM_ITERATIONS; ++i) {
