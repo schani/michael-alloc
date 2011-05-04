@@ -6,6 +6,8 @@
 #include "lock-free-alloc.h"
 
 #ifdef TEST_ALLOC
+#define USE_SMR
+
 #define ACTION_BUFFER_SIZE	16
 
 typedef struct {
@@ -25,11 +27,21 @@ typedef struct {
 #endif
 
 #ifdef TEST_QUEUE
+#define USE_SMR
+
 typedef struct {
 	pthread_t thread;
 	int increment;
+	volatile gboolean have_attached;
 	gint32 next_enqueue_counter;
 	gint32 last_dequeue_counter;
+} ThreadData;
+#endif
+
+#ifdef TEST_DELAYED_FREE
+typedef struct {
+	pthread_t thread;
+	int increment;
 	volatile gboolean have_attached;
 } ThreadData;
 #endif
@@ -352,15 +364,79 @@ test_finish (void)
 
 #endif
 
+#ifdef TEST_DELAYED_FREE
+#define NUM_ENTRIES	32768
+#define NUM_ITERATIONS	1000000
+
+static gint32 entries [NUM_ENTRIES];
+
+static void
+free_func (gpointer data)
+{
+	int i = (long)data;
+
+	if (InterlockedCompareExchange (&entries [i], 0, 1) != 1)
+		g_assert_not_reached ();
+}
+
+static void*
+thread_func (void *_data)
+{
+	ThreadData *data = _data;
+	int increment = data->increment;
+	int index, i;
+
+	index = 0;
+	for (i = 0; i < NUM_ITERATIONS; ++i) {
+		if (InterlockedCompareExchange (&entries [index], 1, 0) == 0) {
+			MonoDelayedFreeItem item = { (gpointer)(long)index, free_func };
+			mono_delayed_free_push (item);
+		} else {
+			MonoDelayedFreeItem item;
+			if (mono_delayed_free_pop (&item))
+				item.free_func (item.p);
+		}
+
+		index += increment;
+		while (index >= NUM_ENTRIES)
+			index -= NUM_ENTRIES;
+	}
+
+	return NULL;
+}
+
+static void
+test_init (void)
+{
+}
+
+static gboolean
+test_finish (void)
+{
+	int i;
+	MonoDelayedFreeItem item;
+
+	while (mono_delayed_free_pop (&item))
+		item.free_func (item.p);
+
+	for (i = 0; i < NUM_ENTRIES; ++i)
+		g_assert (!entries [i]);
+
+	return TRUE;
+}
+#endif
+
 int
 main (void)
 {
 	int i;
 	gboolean result;
 
+#ifdef USE_SMR
 	mono_thread_smr_init ();
 
 	mono_thread_attach ();
+#endif
 
 	test_init ();
 
@@ -378,11 +454,15 @@ main (void)
 	for (i = 0; i < NUM_THREADS; ++i)
 		pthread_join (thread_datas [i].thread, NULL);
 
+#ifdef USE_SMR
 	mono_thread_hazardous_try_free_all ();
+#endif
 
 	result = test_finish ();
 
+#ifdef USE_SMR
 	mono_thread_hazardous_print_stats ();
+#endif
 
 	return result ? 0 : 1;
 }
