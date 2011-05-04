@@ -5,6 +5,8 @@
 #include "atomic.h"
 #include "lock-free-alloc.h"
 
+#define NUM_THREADS	4
+
 #ifdef TEST_ALLOC
 
 #define TEST_SIZE	64
@@ -18,8 +20,6 @@ init_heap (void)
 	mono_lock_free_allocator_init_size_class (&test_sc, TEST_SIZE);
 	mono_lock_free_allocator_init_allocator (&test_heap, &test_sc);
 }
-
-#define NUM_THREADS	4
 
 enum {
 	ACTION_NONE,
@@ -174,41 +174,21 @@ thread_func (void *_data)
 	return NULL;
 }
 
-int
-main (void)
+static void
+test_init (void)
 {
-	int i;
-
-	mono_thread_smr_init ();
-
-	mono_thread_attach ();
-
 	init_heap ();
 	mono_lock_free_alloc (&test_heap);
+}
 
-	thread_datas [0].increment = 1;
-	if (NUM_THREADS >= 2)
-		thread_datas [1].increment = 2;
-	if (NUM_THREADS >= 3)
-		thread_datas [2].increment = 3;
-	if (NUM_THREADS >= 4)
-		thread_datas [3].increment = 5;
-
-	for (i = 0; i < NUM_THREADS; ++i)
-		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
-
-	for (i = 0; i < NUM_THREADS; ++i)
-		pthread_join (thread_datas [i].thread, NULL);
-
-	mono_thread_hazardous_try_free_all ();
-
-	mono_thread_hazardous_print_stats ();
-
+static gboolean
+test_finish (void)
+{
 	if (mono_lock_free_allocator_check_consistency (&test_heap)) {
 		g_print ("heap consistent\n");
-		return 0;
+		return TRUE;
 	}
-	return 1;
+	return FALSE;
 }
 
 #endif
@@ -269,8 +249,6 @@ free_entry_memory (QueueEntry *qe, gboolean mmap)
 	else
 		g_free (qe);
 }
-
-#define NUM_THREADS	4
 
 static ThreadData thread_datas [NUM_THREADS];
 
@@ -349,15 +327,10 @@ thread_func (void *_data)
 	return NULL;
 }
 
-int
-main (void)
+static void
+test_init (void)
 {
-	QueueEntry *qe;
 	int i;
-
-	mono_thread_smr_init ();
-
-	mono_thread_attach ();
 
 	mono_lock_free_queue_init (&queue);
 
@@ -366,23 +339,15 @@ main (void)
 		entries [i].mmap = TRUE;
 	*/
 
-	thread_datas [0].increment = 1;
-	if (NUM_THREADS >= 2)
-		thread_datas [1].increment = 2;
-	if (NUM_THREADS >= 3)
-		thread_datas [2].increment = 3;
-	if (NUM_THREADS >= 4)
-		thread_datas [3].increment = 5;
-
-	for (i = 0; i < NUM_THREADS; ++i) {
-		thread_datas [i].last_dequeue_counter = -1;
-		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
-	}
-
 	for (i = 0; i < NUM_THREADS; ++i)
-		pthread_join (thread_datas [i].thread, NULL);
+		thread_datas [i].last_dequeue_counter = -1;
+}
 
-	mono_thread_hazardous_try_free_all ();
+static gboolean
+test_finish (void)
+{
+	QueueEntry *qe;
+	int i;
 
 	while ((qe = (QueueEntry*)mono_lock_free_queue_dequeue (&queue)))
 		free_entry (qe);
@@ -390,9 +355,42 @@ main (void)
 	for (i = 0; i < NUM_ENTRIES; ++i)
 		g_assert (!entries [i].queue_entry);
 
-	mono_thread_hazardous_print_stats ();
-
-	return 0;
+	return TRUE;
 }
 
 #endif
+
+int
+main (void)
+{
+	int i;
+	gboolean result;
+
+	mono_thread_smr_init ();
+
+	mono_thread_attach ();
+
+	test_init ();
+
+	thread_datas [0].increment = 1;
+	if (NUM_THREADS >= 2)
+		thread_datas [1].increment = 3;
+	if (NUM_THREADS >= 3)
+		thread_datas [2].increment = 5;
+	if (NUM_THREADS >= 4)
+		thread_datas [3].increment = 7;
+
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_create (&thread_datas [i].thread, NULL, thread_func, &thread_datas [i]);
+
+	for (i = 0; i < NUM_THREADS; ++i)
+		pthread_join (thread_datas [i].thread, NULL);
+
+	mono_thread_hazardous_try_free_all ();
+
+	result = test_finish ();
+
+	mono_thread_hazardous_print_stats ();
+
+	return result ? 0 : 1;
+}
