@@ -81,9 +81,17 @@ mono_lls_find (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, uintptr_t 
 
 try_again:
 	prev = &list->head;
+
+	/*
+	 * prev is not really a hazardous pointer, but we return prev
+	 * in hazard pointer 2, so we set it here.  Note also that
+	 * prev is not a pointer to a node.  We use here the fact that
+	 * the first element in a node is the next pointer, so it
+	 * works, but it's not pretty.
+	 */
 	mono_hazard_pointer_set (hp, 2, prev);
 
-	cur = mono_lls_pointer_unmask (get_hazardous_pointer ((gpointer*)prev, hp, 1));
+	cur = get_hazardous_pointer_with_mask ((gpointer*)prev, hp, 1);
 
 	while (1) {
 		if (cur == NULL)

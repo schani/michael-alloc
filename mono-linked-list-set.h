@@ -18,6 +18,7 @@
 typedef struct _MonoLinkedListSetNode MonoLinkedListSetNode;
 
 struct _MonoLinkedListSetNode {
+	/* next must be the first element in this struct! */
 	MonoLinkedListSetNode *next;
 	uintptr_t key;
 };
