@@ -173,7 +173,8 @@ mono_delayed_free_pop (MonoDelayedFreeItem *item)
 		entry = get_entry (index - 1);
 	} while (InterlockedCompareExchange (&entry->state, STATE_BUSY, STATE_USED) != STATE_USED);
 
-	mono_memory_write_barrier ();
+	/* Reading the item must happen before CASing the state. */
+	mono_memory_barrier ();
 
 	*item = entry->item;
 
