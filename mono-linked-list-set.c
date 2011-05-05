@@ -182,6 +182,8 @@ mono_lls_remove (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, MonoLink
 		cur = mono_hazard_pointer_get_val (hp, 1);
 		prev = mono_hazard_pointer_get_val (hp, 2);
 
+		g_assert (cur == value);
+
 		if (InterlockedCompareExchangePointer ((volatile gpointer*)&cur->next, mask (next, 1), next) != next)
 			continue;
 		/* The second CAS must happen before the first. */
