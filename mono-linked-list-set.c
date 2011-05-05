@@ -102,7 +102,7 @@ try_again:
 			mono_hazard_pointer_set (hp, 2, cur);
 		} else {
 			next = mono_lls_pointer_unmask (next);
-			if (InterlockedCompareExchangePointer ((volatile gpointer*)prev, next, cur) == next) {
+			if (InterlockedCompareExchangePointer ((volatile gpointer*)prev, next, cur) == cur) {
 				if (list->free_node_func)
 					mono_thread_hazardous_free_or_queue (cur, list->free_node_func);
 			} else
