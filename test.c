@@ -506,6 +506,7 @@ thread_func (void *_data)
 				g_assert (result);
 
 				node = mono_hazard_pointer_get_val (hp, 1);
+				g_assert (node->key == index << 2);
 
 				mono_hazard_pointer_clear (hp, 0);
 				mono_hazard_pointer_clear (hp, 1);
