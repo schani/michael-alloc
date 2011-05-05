@@ -158,15 +158,16 @@ small_id_free (int id)
 static gboolean
 is_pointer_hazardous (gpointer p)
 {
-	int i;
+	int i, j;
 	int highest = highest_small_id;
 
 	g_assert (highest < hazard_table_size);
 
 	for (i = 0; i <= highest; ++i) {
-		if (hazard_table [i].hazard_pointers [0] == p
-				|| hazard_table [i].hazard_pointers [1] == p)
-			return TRUE;
+		for (j = 0; j < HAZARD_POINTER_COUNT; ++j) {
+			if (hazard_table [i].hazard_pointers [j] == p)
+				return TRUE;
+		}
 	}
 
 	return FALSE;
