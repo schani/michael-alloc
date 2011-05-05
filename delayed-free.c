@@ -18,6 +18,54 @@ typedef struct {
 	MonoDelayedFreeItem item;
 } Entry;
 
+#ifdef FAILSAFE_DELAYED_FREE
+
+#define NUM_ENTRIES	4
+
+static Entry entries [NUM_ENTRIES];
+
+void
+mono_delayed_free_push (MonoDelayedFreeItem item)
+{
+	int i;
+
+	for (i = 0; i < NUM_ENTRIES; ++i) {
+		if (entries [i].state != STATE_FREE)
+			continue;
+		if (InterlockedCompareExchange (&entries [i].state, STATE_BUSY, STATE_FREE) == STATE_FREE) {
+			mono_memory_write_barrier ();
+			entries [i].item = item;
+			mono_memory_write_barrier ();
+			entries [i].state = STATE_USED;
+			mono_memory_write_barrier ();
+			return;
+		}
+	}
+	g_assert_not_reached ();
+}
+
+gboolean
+mono_delayed_free_pop (MonoDelayedFreeItem *item)
+{
+	int i;
+
+	for (i = 0; i < NUM_ENTRIES; ++i) {
+		if (entries [i].state != STATE_USED)
+			continue;
+		if (InterlockedCompareExchange (&entries [i].state, STATE_BUSY, STATE_USED) == STATE_USED) {
+			mono_memory_barrier ();
+			*item = entries [i].item;
+			mono_memory_barrier ();
+			entries [i].state = STATE_FREE;
+			mono_memory_write_barrier ();
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+#else
+
 typedef struct _Chunk Chunk;
 struct _Chunk {
 	Chunk *next;
@@ -137,3 +185,5 @@ mono_delayed_free_pop (MonoDelayedFreeItem *item)
 
 	return TRUE;
 }
+
+#endif

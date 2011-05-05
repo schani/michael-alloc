@@ -10,25 +10,27 @@ QUEUE = lock-free-queue
 
 OPT = -O0
 
+CFLAGS = $(TEST) $(OPT) -g -Wall $(shell pkg-config --cflags glib-2.0) -DFAILSAFE_DELAYED_FREE
+
 all : test
 
 %.o : %.c
-	gcc $(OPT) -g $(TEST) -c -Wall $(shell pkg-config --cflags glib-2.0) $<
+	gcc $(CFLAGS) -c  $<
 
 delayed-free.o : delayed-free.c
-	gcc $(OPT) -g $(TEST) -c -Wall $(shell pkg-config --cflags glib-2.0) $<
+	gcc $(CFLAGS) -c  $<
 
 hazard.o : hazard.c
-	gcc $(OPT) -g $(TEST) -c -Wall $(shell pkg-config --cflags glib-2.0) $<
+	gcc $(CFLAGS) -c  $<
 
 lock-free-queue.o : lock-free-queue.c
-	gcc $(OPT) -g $(TEST) -c -Wall $(shell pkg-config --cflags glib-2.0) $<
+	gcc $(CFLAGS) -c  $<
 
 mono-linked-list-set.o : mono-linked-list-set.c
-	gcc $(OPT) -g $(TEST) -c -Wall $(shell pkg-config --cflags glib-2.0) $<
+	gcc $(CFLAGS) -c  $<
 
 test.o : test.c
-	gcc $(OPT) -g $(TEST) -c -Wall $(shell pkg-config --cflags glib-2.0) $<
+	gcc $(CFLAGS) -c  $<
 
 test : hazard.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o
 	gcc $(OPT) -g -Wall -o test hazard.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o -lpthread $(shell pkg-config --libs glib-2.0)
