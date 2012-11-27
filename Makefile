@@ -10,7 +10,7 @@ QUEUE = lock-free-queue
 
 OPT = -O0
 
-CFLAGS = $(TEST) $(OPT) -g -Wall $(shell pkg-config --cflags glib-2.0 gthread-2.0) -DFAILSAFE_DELAYED_FREE
+CFLAGS = $(TEST) $(OPT) -g -Wall $(shell pkg-config --cflags glib-2.0 gthread-2.0) #-DFAILSAFE_DELAYED_FREE
 
 all : test
 
