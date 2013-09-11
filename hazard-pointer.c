@@ -7,7 +7,7 @@
 #include "mono-membar.h"
 #include "delayed-free.h"
 #include "mono-mmap.h"
-#include "hazard.h"
+#include "hazard-pointer.h"
 
 #define mono_pagesize getpagesize
 

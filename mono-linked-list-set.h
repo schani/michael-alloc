@@ -12,7 +12,7 @@
 
 #include <stdint.h>
 
-#include "hazard.h"
+#include "hazard-pointer.h"
 #include "mono-membar.h"
 
 typedef struct _MonoLinkedListSetNode MonoLinkedListSetNode;
@@ -50,25 +50,25 @@ void
 mono_lls_init (MonoLinkedListSet *list, void (*free_node_func)(void *));
 
 gboolean
-mono_lls_find (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, uintptr_t key);
+mono_lls_find (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, uintptr_t key) MONO_INTERNAL;
 
 gboolean
-mono_lls_insert (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, MonoLinkedListSetNode *value);
+mono_lls_insert (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, MonoLinkedListSetNode *value) MONO_INTERNAL;
 
 gboolean
-mono_lls_remove (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, MonoLinkedListSetNode *value);
+mono_lls_remove (MonoLinkedListSet *list, MonoThreadHazardPointers *hp, MonoLinkedListSetNode *value) MONO_INTERNAL;
 
 gpointer
-get_hazardous_pointer_with_mask (gpointer volatile *pp, MonoThreadHazardPointers *hp, int hazard_index);
+get_hazardous_pointer_with_mask (gpointer volatile *pp, MonoThreadHazardPointers *hp, int hazard_index) MONO_INTERNAL;
 
 /*
 Requires the world to be stoped
 */
-#define MONO_LLS_FOREACH(list, element) {\
+#define MONO_LLS_FOREACH(list, element, type) {\
 	MonoLinkedListSetNode *__cur;	\
 	for (__cur = (list)->head; __cur; __cur = mono_lls_pointer_unmask (__cur->next)) \
 		if (!mono_lls_pointer_get_mark (__cur->next)) {	\
-		       	(element) = (typeof((element)))__cur;			\
+		       	(element) = (type)__cur;			\
 
 #define MONO_LLS_END_FOREACH }}
 
@@ -83,7 +83,7 @@ mono_lls_info_step (MonoLinkedListSetNode *val, MonoThreadHazardPointers *hp)
 /*
 Provides snapshot iteration
 */
-#define MONO_LLS_FOREACH_SAFE(list, element) {\
+#define MONO_LLS_FOREACH_SAFE(list, element, type) {\
 	MonoThreadHazardPointers *__hp = mono_hazard_pointer_get ();	\
 	MonoLinkedListSetNode *__cur, *__next;	\
 	for (__cur = mono_lls_pointer_unmask (get_hazardous_pointer ((gpointer volatile*)&(list)->head, __hp, 1)); \
@@ -91,7 +91,7 @@ Provides snapshot iteration
 		__cur = mono_lls_info_step (__next, __hp)) {	\
 		__next = get_hazardous_pointer_with_mask ((gpointer volatile*)&__cur->next, __hp, 0);	\
 		if (!mono_lls_pointer_get_mark (__next)) {	\
-			(element) = (typeof((element)))__cur;
+			(element) = (type)__cur;
 
 #define MONO_LLS_END_FOREACH_SAFE \
 		} \

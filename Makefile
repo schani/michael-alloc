@@ -20,7 +20,7 @@ all : test
 delayed-free.o : delayed-free.c
 	gcc $(CFLAGS) -c  $<
 
-hazard.o : hazard.c
+hazard-pointer.o : hazard-pointer.c
 	gcc $(CFLAGS) -c  $<
 
 lock-free-queue.o : lock-free-queue.c
@@ -32,8 +32,8 @@ mono-linked-list-set.o : mono-linked-list-set.c
 test.o : test.c
 	gcc $(CFLAGS) -c  $<
 
-test : hazard.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o
-	gcc $(OPT) -g -Wall -o test hazard.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o -lpthread $(shell pkg-config --libs glib-2.0 gthread-2.0)
+test : hazard-pointer.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o
+	gcc $(OPT) -g -Wall -o test hazard-pointer.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o -lpthread $(shell pkg-config --libs glib-2.0 gthread-2.0)
 
 clean :
 	rm -f *.o test

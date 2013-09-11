@@ -2,6 +2,81 @@
  * lock-free-alloc.c: Lock free allocator.
  *
  * (C) Copyright 2011 Novell, Inc
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining
+ * a copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be
+ * included in all copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+ * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+ * LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+ * OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+ * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/*
+ * This is a simplified version of the lock-free allocator described in
+ *
+ * Scalable Lock-Free Dynamic Memory Allocation
+ * Maged M. Michael, PLDI 2004
+ *
+ * I could not get Michael's allocator working bug free under heavy
+ * stress tests.  The paper doesn't provide correctness proof and after
+ * failing to formalize the ownership of descriptors I devised this
+ * simpler allocator.
+ *
+ * Allocation within superblocks proceeds exactly like in Michael's
+ * allocator.  The simplification is that a thread has to "acquire" a
+ * descriptor before it can allocate from its superblock.  While it owns
+ * the descriptor no other thread can acquire and hence allocate from
+ * it.  A consequence of this is that the ABA problem cannot occur, so
+ * we don't need the tag field and don't have to use 64 bit CAS.
+ *
+ * Descriptors are stored in two locations: The partial queue and the
+ * active field.  They can only be in at most one of those at one time.
+ * If a thread wants to allocate, it needs to get a descriptor.  It
+ * tries the active descriptor first, CASing it to NULL.  If that
+ * doesn't work, it gets a descriptor out of the partial queue.  Once it
+ * has the descriptor it owns it because it is not referenced anymore.
+ * It allocates a slot and then gives the descriptor back (unless it is
+ * FULL).
+ *
+ * Note that it is still possible that a slot is freed while an
+ * allocation is in progress from the same superblock.  Ownership in
+ * this case is not complicated, though.  If the block was FULL and the
+ * free set it to PARTIAL, the free now owns the block (because FULL
+ * blocks are not referenced from partial and active) and has to give it
+ * back.  If the block was PARTIAL then the free doesn't own the block
+ * (because it's either still referenced, or an alloc owns it).  A
+ * special case of this is that it has changed from PARTIAL to EMPTY and
+ * now needs to be retired.  Technically, the free wouldn't have to do
+ * anything in this case because the first thing an alloc does when it
+ * gets ownership of a descriptor is to check whether it is EMPTY and
+ * retire it if that is the case.  As an optimization, our free does try
+ * to acquire the descriptor (by CASing the active field, which, if it
+ * is lucky, points to that descriptor) and if it can do so, retire it.
+ * If it can't, it tries to retire other descriptors from the partial
+ * queue, so that we can be sure that even if no more allocations
+ * happen, descriptors are still retired.  This is analogous to what
+ * Michael's allocator does.
+ *
+ * Another difference to Michael's allocator is not related to
+ * concurrency, however: We don't point from slots to descriptors.
+ * Instead we allocate superblocks aligned and point from the start of
+ * the superblock to the descriptor, so we only need one word of
+ * metadata per superblock.
+ *
+ * FIXME: Having more than one allocator per size class is probably
+ * buggy because it was never tested.
  */
 
 #include <glib.h>
@@ -9,7 +84,7 @@
 
 #include "mono-mmap.h"
 #include "mono-membar.h"
-#include "hazard.h"
+#include "hazard-pointer.h"
 #include "atomic.h"
 #include "lock-free-queue.h"
 #include "sgen-gc.h"
@@ -27,8 +102,8 @@ enum {
 typedef union {
 	gint32 value;
 	struct {
-		guint32 avail : 10;
-		guint32 count : 10;
+		guint32 avail : 15;
+		guint32 count : 15;
 		guint32 state : 2;
 	} data;
 } Anchor;
@@ -37,14 +112,14 @@ typedef struct _MonoLockFreeAllocDescriptor Descriptor;
 struct _MonoLockFreeAllocDescriptor {
 	MonoLockFreeQueueNode node;
 	MonoLockFreeAllocator *heap;
-    volatile Anchor anchor;
+	volatile Anchor anchor;
 	unsigned int slot_size;
 	unsigned int max_count;
 	gpointer sb;
 #ifndef DESC_AVAIL_DUMMY
 	Descriptor * volatile next;
 #endif
-	gboolean in_use;
+	gboolean in_use;	/* used for debugging only */
 };
 
 #define NUM_DESC_BATCH	64
@@ -53,7 +128,7 @@ struct _MonoLockFreeAllocDescriptor {
 #define SB_HEADER_SIZE	16
 #define SB_USABLE_SIZE	(SB_SIZE - SB_HEADER_SIZE)
 
-#define SB_HEADER_FOR_ADDR(a)	((gpointer)((mword)(a) & ~(mword)(SB_SIZE-1)))
+#define SB_HEADER_FOR_ADDR(a)	((gpointer)((gulong)(a) & ~(gulong)(SB_SIZE-1)))
 #define DESCRIPTOR_FOR_ADDR(a)	(*(Descriptor**)SB_HEADER_FOR_ADDR (a))
 
 static gpointer
@@ -272,7 +347,7 @@ alloc_from_active_or_partial (MonoLockFreeAllocator *heap)
 	do {
 		unsigned int next;
 
-		new_anchor = old_anchor = (Anchor)*(volatile gint32*)&desc->anchor.value;
+		new_anchor = old_anchor = *(volatile Anchor*)&desc->anchor.value;
 		if (old_anchor.data.state == STATE_EMPTY) {
 			/* We must free it because we own it. */
 			desc_retire (desc);
@@ -375,7 +450,7 @@ mono_lock_free_free (gpointer ptr)
 	g_assert (SB_HEADER_FOR_ADDR (ptr) == SB_HEADER_FOR_ADDR (sb));
 
 	do {
-		new_anchor = old_anchor = (Anchor)*(volatile gint32*)&desc->anchor.value;
+		new_anchor = old_anchor = *(volatile Anchor*)&desc->anchor.value;
 		*(unsigned int*)ptr = old_anchor.data.avail;
 		new_anchor.data.avail = ((char*)ptr - (char*)sb) / desc->slot_size;
 		g_assert (new_anchor.data.avail < SB_USABLE_SIZE / desc->slot_size);
@@ -429,7 +504,11 @@ descriptor_check_consistency (Descriptor *desc, gboolean print)
 {
 	int count = desc->anchor.data.count;
 	int max_count = SB_USABLE_SIZE / desc->slot_size;
+#if _MSC_VER
+	gboolean* linked = alloca(max_count*sizeof(gboolean));
+#else
 	gboolean linked [max_count];
+#endif
 	int i, last;
 	unsigned int index;
 

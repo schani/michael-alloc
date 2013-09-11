@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 
-#include "hazard.h"
+#include "hazard-pointer.h"
 #include "atomic.h"
 #include "lock-free-alloc.h"
 #include "mono-linked-list-set.h"
