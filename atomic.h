@@ -20,7 +20,7 @@
 
 #endif
 
-#include <glib.h>
+#include "fake-glib.h"
 
 #if defined(__NetBSD__) && defined(HAVE_ATOMIC_OPS)
 

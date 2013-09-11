@@ -1,7 +1,7 @@
 #ifndef __MONO_METADATA_SGEN_GC_H__
 #define __MONO_METADATA_SGEN_GC_H__
 
-#include <glib.h>
+#include "fake-glib.h"
 
 typedef unsigned long mword;
 

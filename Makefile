@@ -10,7 +10,7 @@ QUEUE = lock-free-queue
 
 OPT = -O0
 
-CFLAGS = $(TEST) $(OPT) -g -Wall $(shell pkg-config --cflags glib-2.0 gthread-2.0) #-DFAILSAFE_DELAYED_FREE
+CFLAGS = $(TEST) $(OPT) -g -Wall -DMONO_INTERNAL= #-DFAILSAFE_DELAYED_FREE
 
 all : test
 
@@ -33,7 +33,7 @@ test.o : test.c
 	gcc $(CFLAGS) -c  $<
 
 test : hazard-pointer.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o
-	gcc $(OPT) -g -Wall -o test hazard-pointer.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o -lpthread $(shell pkg-config --libs glib-2.0 gthread-2.0)
+	gcc $(OPT) -g -Wall -o test hazard-pointer.o $(QUEUE).o $(ALLOC).o mono-mmap.o sgen-gc.o delayed-free.o mono-linked-list-set.o test.o -lpthread
 
 clean :
 	rm -f *.o test

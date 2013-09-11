@@ -1,7 +1,7 @@
 #ifndef __MONO_UTILS_HAZARD_H__
 #define __MONO_UTILS_HAZARD_H__
 
-#include <glib.h>
+#include "fake-glib.h"
 
 #include "delayed-free.h"
 #include "mono-membar.h"

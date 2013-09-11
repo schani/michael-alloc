@@ -1,7 +1,7 @@
 #ifndef __MONO_UTILS_DELAYED_FREE_H__
 #define __MONO_UTILS_DELAYED_FREE_H__
 
-#include <glib.h>
+#include "fake-glib.h"
 #include <pthread.h>
 
 #define CRITICAL_SECTION pthread_mutex_t

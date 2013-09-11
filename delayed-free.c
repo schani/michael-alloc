@@ -1,4 +1,4 @@
-#include <glib.h>
+#include "fake-glib.h"
 
 #include "metadata.h"
 #include "mono-mmap.h"

@@ -563,8 +563,6 @@ main (void)
 	int i;
 	gboolean result;
 
-	g_thread_init (NULL);
-
 #ifdef USE_SMR
 	mono_thread_smr_init ();
 

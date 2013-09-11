@@ -26,7 +26,7 @@
 #ifndef __MONO_LOCKFREEALLOC_H__
 #define __MONO_LOCKFREEALLOC_H__
 
-#include <glib.h>
+#include "fake-glib.h"
 
 #include "lock-free-queue.h"
 

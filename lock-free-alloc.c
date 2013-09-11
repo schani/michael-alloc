@@ -79,7 +79,7 @@
  * buggy because it was never tested.
  */
 
-#include <glib.h>
+#include "fake-glib.h"
 #include <stdlib.h>
 
 #include "mono-mmap.h"
