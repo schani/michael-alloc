@@ -106,7 +106,7 @@ enum {
 
 static gpointer entries [NUM_ENTRIES];
 
-static volatile guint64 atomic_test;
+//static volatile guint64 atomic_test;
 
 static void
 log_action (ThreadData *data, int action, int index, gpointer p)
@@ -203,10 +203,12 @@ thread_func (void *_data)
 		while (index >= NUM_ENTRIES)
 			index -= NUM_ENTRIES;
 
+		/*
 		guint64 a = atomic_test;
 		g_assert ((a & 0xffffffff) == (a >> 32));
 		guint64 new_a = (index | ((guint64)index << 32));
 		atomic64_cmpxchg ((volatile gint64*)&atomic_test, a, new_a);
+		*/
 
 		if (i % (NUM_ITERATIONS / 20) == 0)
 			g_print ("thread %d: %d\n", increment, i);
@@ -558,7 +560,7 @@ test_finish (void)
 #endif
 
 int
-main (void)
+lock_free_allocator_test_main (void)
 {
 	int i;
 	gboolean result;

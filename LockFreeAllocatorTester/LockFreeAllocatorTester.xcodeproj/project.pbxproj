@@ -1,0 +1,356 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		8EA0D32717E1153900A63F1D /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA0D32617E1153900A63F1D /* UIKit.framework */; };
+		8EA0D32917E1153900A63F1D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA0D32817E1153900A63F1D /* Foundation.framework */; };
+		8EA0D32B17E1153900A63F1D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA0D32A17E1153900A63F1D /* CoreGraphics.framework */; };
+		8EA0D33117E1153900A63F1D /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 8EA0D32F17E1153900A63F1D /* InfoPlist.strings */; };
+		8EA0D33317E1153900A63F1D /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D33217E1153900A63F1D /* main.m */; };
+		8EA0D33717E1153900A63F1D /* XAMAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D33617E1153900A63F1D /* XAMAppDelegate.m */; };
+		8EA0D33917E1153900A63F1D /* Default.png in Resources */ = {isa = PBXBuildFile; fileRef = 8EA0D33817E1153900A63F1D /* Default.png */; };
+		8EA0D33B17E1153900A63F1D /* Default@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 8EA0D33A17E1153900A63F1D /* Default@2x.png */; };
+		8EA0D33D17E1153900A63F1D /* Default-568h@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 8EA0D33C17E1153900A63F1D /* Default-568h@2x.png */; };
+		8EA0D35817E1158100A63F1D /* delayed-free.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34517E1158100A63F1D /* delayed-free.c */; };
+		8EA0D35917E1158100A63F1D /* hazard-pointer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34717E1158100A63F1D /* hazard-pointer.c */; };
+		8EA0D35A17E1158100A63F1D /* lock-free-alloc.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34917E1158100A63F1D /* lock-free-alloc.c */; };
+		8EA0D35B17E1158100A63F1D /* lock-free-queue.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34B17E1158100A63F1D /* lock-free-queue.c */; };
+		8EA0D35C17E1158100A63F1D /* mono-linked-list-set.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34E17E1158100A63F1D /* mono-linked-list-set.c */; };
+		8EA0D35D17E1158100A63F1D /* mono-mmap.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D35117E1158100A63F1D /* mono-mmap.c */; };
+		8EA0D35E17E1158100A63F1D /* sgen-gc.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D35317E1158100A63F1D /* sgen-gc.c */; };
+		8EA0D36017E1158100A63F1D /* test.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D35717E1158100A63F1D /* test.c */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		8EA0D32317E1153900A63F1D /* LockFreeAllocatorTester.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LockFreeAllocatorTester.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8EA0D32617E1153900A63F1D /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
+		8EA0D32817E1153900A63F1D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		8EA0D32A17E1153900A63F1D /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
+		8EA0D32E17E1153900A63F1D /* LockFreeAllocatorTester-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "LockFreeAllocatorTester-Info.plist"; sourceTree = "<group>"; };
+		8EA0D33017E1153900A63F1D /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
+		8EA0D33217E1153900A63F1D /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
+		8EA0D33417E1153900A63F1D /* LockFreeAllocatorTester-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LockFreeAllocatorTester-Prefix.pch"; sourceTree = "<group>"; };
+		8EA0D33517E1153900A63F1D /* XAMAppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = XAMAppDelegate.h; sourceTree = "<group>"; };
+		8EA0D33617E1153900A63F1D /* XAMAppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = XAMAppDelegate.m; sourceTree = "<group>"; };
+		8EA0D33817E1153900A63F1D /* Default.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = Default.png; sourceTree = "<group>"; };
+		8EA0D33A17E1153900A63F1D /* Default@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Default@2x.png"; sourceTree = "<group>"; };
+		8EA0D33C17E1153900A63F1D /* Default-568h@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Default-568h@2x.png"; sourceTree = "<group>"; };
+		8EA0D34317E1158100A63F1D /* alloc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = alloc.h; path = ../../alloc.h; sourceTree = "<group>"; };
+		8EA0D34417E1158100A63F1D /* atomic.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = atomic.h; path = ../../atomic.h; sourceTree = "<group>"; };
+		8EA0D34517E1158100A63F1D /* delayed-free.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "delayed-free.c"; path = "../../delayed-free.c"; sourceTree = "<group>"; };
+		8EA0D34617E1158100A63F1D /* delayed-free.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "delayed-free.h"; path = "../../delayed-free.h"; sourceTree = "<group>"; };
+		8EA0D34717E1158100A63F1D /* hazard-pointer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "hazard-pointer.c"; path = "../../hazard-pointer.c"; sourceTree = "<group>"; };
+		8EA0D34817E1158100A63F1D /* hazard-pointer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "hazard-pointer.h"; path = "../../hazard-pointer.h"; sourceTree = "<group>"; };
+		8EA0D34917E1158100A63F1D /* lock-free-alloc.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "lock-free-alloc.c"; path = "../../lock-free-alloc.c"; sourceTree = "<group>"; };
+		8EA0D34A17E1158100A63F1D /* lock-free-alloc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "lock-free-alloc.h"; path = "../../lock-free-alloc.h"; sourceTree = "<group>"; };
+		8EA0D34B17E1158100A63F1D /* lock-free-queue.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "lock-free-queue.c"; path = "../../lock-free-queue.c"; sourceTree = "<group>"; };
+		8EA0D34C17E1158100A63F1D /* lock-free-queue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "lock-free-queue.h"; path = "../../lock-free-queue.h"; sourceTree = "<group>"; };
+		8EA0D34D17E1158100A63F1D /* metadata.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = metadata.h; path = ../../metadata.h; sourceTree = "<group>"; };
+		8EA0D34E17E1158100A63F1D /* mono-linked-list-set.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "mono-linked-list-set.c"; path = "../../mono-linked-list-set.c"; sourceTree = "<group>"; };
+		8EA0D34F17E1158100A63F1D /* mono-linked-list-set.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "mono-linked-list-set.h"; path = "../../mono-linked-list-set.h"; sourceTree = "<group>"; };
+		8EA0D35017E1158100A63F1D /* mono-membar.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "mono-membar.h"; path = "../../mono-membar.h"; sourceTree = "<group>"; };
+		8EA0D35117E1158100A63F1D /* mono-mmap.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "mono-mmap.c"; path = "../../mono-mmap.c"; sourceTree = "<group>"; };
+		8EA0D35217E1158100A63F1D /* mono-mmap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "mono-mmap.h"; path = "../../mono-mmap.h"; sourceTree = "<group>"; };
+		8EA0D35317E1158100A63F1D /* sgen-gc.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "sgen-gc.c"; path = "../../sgen-gc.c"; sourceTree = "<group>"; };
+		8EA0D35417E1158100A63F1D /* sgen-gc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "sgen-gc.h"; path = "../../sgen-gc.h"; sourceTree = "<group>"; };
+		8EA0D35717E1158100A63F1D /* test.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = test.c; path = ../../test.c; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8EA0D32017E1153900A63F1D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8EA0D32717E1153900A63F1D /* UIKit.framework in Frameworks */,
+				8EA0D32917E1153900A63F1D /* Foundation.framework in Frameworks */,
+				8EA0D32B17E1153900A63F1D /* CoreGraphics.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8EA0D31A17E1153900A63F1D = {
+			isa = PBXGroup;
+			children = (
+				8EA0D32C17E1153900A63F1D /* LockFreeAllocatorTester */,
+				8EA0D32517E1153900A63F1D /* Frameworks */,
+				8EA0D32417E1153900A63F1D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8EA0D32417E1153900A63F1D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8EA0D32317E1153900A63F1D /* LockFreeAllocatorTester.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8EA0D32517E1153900A63F1D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8EA0D32617E1153900A63F1D /* UIKit.framework */,
+				8EA0D32817E1153900A63F1D /* Foundation.framework */,
+				8EA0D32A17E1153900A63F1D /* CoreGraphics.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		8EA0D32C17E1153900A63F1D /* LockFreeAllocatorTester */ = {
+			isa = PBXGroup;
+			children = (
+				8EA0D34317E1158100A63F1D /* alloc.h */,
+				8EA0D34417E1158100A63F1D /* atomic.h */,
+				8EA0D34517E1158100A63F1D /* delayed-free.c */,
+				8EA0D34617E1158100A63F1D /* delayed-free.h */,
+				8EA0D34717E1158100A63F1D /* hazard-pointer.c */,
+				8EA0D34817E1158100A63F1D /* hazard-pointer.h */,
+				8EA0D34917E1158100A63F1D /* lock-free-alloc.c */,
+				8EA0D34A17E1158100A63F1D /* lock-free-alloc.h */,
+				8EA0D34B17E1158100A63F1D /* lock-free-queue.c */,
+				8EA0D34C17E1158100A63F1D /* lock-free-queue.h */,
+				8EA0D34D17E1158100A63F1D /* metadata.h */,
+				8EA0D34E17E1158100A63F1D /* mono-linked-list-set.c */,
+				8EA0D34F17E1158100A63F1D /* mono-linked-list-set.h */,
+				8EA0D35017E1158100A63F1D /* mono-membar.h */,
+				8EA0D35117E1158100A63F1D /* mono-mmap.c */,
+				8EA0D35217E1158100A63F1D /* mono-mmap.h */,
+				8EA0D35317E1158100A63F1D /* sgen-gc.c */,
+				8EA0D35417E1158100A63F1D /* sgen-gc.h */,
+				8EA0D35717E1158100A63F1D /* test.c */,
+				8EA0D33517E1153900A63F1D /* XAMAppDelegate.h */,
+				8EA0D33617E1153900A63F1D /* XAMAppDelegate.m */,
+				8EA0D32D17E1153900A63F1D /* Supporting Files */,
+			);
+			path = LockFreeAllocatorTester;
+			sourceTree = "<group>";
+		};
+		8EA0D32D17E1153900A63F1D /* Supporting Files */ = {
+			isa = PBXGroup;
+			children = (
+				8EA0D32E17E1153900A63F1D /* LockFreeAllocatorTester-Info.plist */,
+				8EA0D32F17E1153900A63F1D /* InfoPlist.strings */,
+				8EA0D33217E1153900A63F1D /* main.m */,
+				8EA0D33417E1153900A63F1D /* LockFreeAllocatorTester-Prefix.pch */,
+				8EA0D33817E1153900A63F1D /* Default.png */,
+				8EA0D33A17E1153900A63F1D /* Default@2x.png */,
+				8EA0D33C17E1153900A63F1D /* Default-568h@2x.png */,
+			);
+			name = "Supporting Files";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8EA0D32217E1153900A63F1D /* LockFreeAllocatorTester */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8EA0D34017E1153900A63F1D /* Build configuration list for PBXNativeTarget "LockFreeAllocatorTester" */;
+			buildPhases = (
+				8EA0D31F17E1153900A63F1D /* Sources */,
+				8EA0D32017E1153900A63F1D /* Frameworks */,
+				8EA0D32117E1153900A63F1D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LockFreeAllocatorTester;
+			productName = LockFreeAllocatorTester;
+			productReference = 8EA0D32317E1153900A63F1D /* LockFreeAllocatorTester.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8EA0D31B17E1153900A63F1D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				CLASSPREFIX = XAM;
+				LastUpgradeCheck = 0460;
+				ORGANIZATIONNAME = "Mark Probst";
+			};
+			buildConfigurationList = 8EA0D31E17E1153900A63F1D /* Build configuration list for PBXProject "LockFreeAllocatorTester" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 8EA0D31A17E1153900A63F1D;
+			productRefGroup = 8EA0D32417E1153900A63F1D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8EA0D32217E1153900A63F1D /* LockFreeAllocatorTester */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8EA0D32117E1153900A63F1D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8EA0D33117E1153900A63F1D /* InfoPlist.strings in Resources */,
+				8EA0D33917E1153900A63F1D /* Default.png in Resources */,
+				8EA0D33B17E1153900A63F1D /* Default@2x.png in Resources */,
+				8EA0D33D17E1153900A63F1D /* Default-568h@2x.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8EA0D31F17E1153900A63F1D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8EA0D33317E1153900A63F1D /* main.m in Sources */,
+				8EA0D33717E1153900A63F1D /* XAMAppDelegate.m in Sources */,
+				8EA0D35817E1158100A63F1D /* delayed-free.c in Sources */,
+				8EA0D35917E1158100A63F1D /* hazard-pointer.c in Sources */,
+				8EA0D35A17E1158100A63F1D /* lock-free-alloc.c in Sources */,
+				8EA0D35B17E1158100A63F1D /* lock-free-queue.c in Sources */,
+				8EA0D35C17E1158100A63F1D /* mono-linked-list-set.c in Sources */,
+				8EA0D35D17E1158100A63F1D /* mono-mmap.c in Sources */,
+				8EA0D35E17E1158100A63F1D /* sgen-gc.c in Sources */,
+				8EA0D36017E1158100A63F1D /* test.c in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXVariantGroup section */
+		8EA0D32F17E1153900A63F1D /* InfoPlist.strings */ = {
+			isa = PBXVariantGroup;
+			children = (
+				8EA0D33017E1153900A63F1D /* en */,
+			);
+			name = InfoPlist.strings;
+			sourceTree = "<group>";
+		};
+/* End PBXVariantGroup section */
+
+/* Begin XCBuildConfiguration section */
+		8EA0D33E17E1153900A63F1D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 6.1;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8EA0D33F17E1153900A63F1D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++0x";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 6.1;
+				OTHER_CFLAGS = "-DNS_BLOCK_ASSERTIONS=1";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		8EA0D34117E1153900A63F1D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "LockFreeAllocatorTester/LockFreeAllocatorTester-Prefix.pch";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+					"MONO_INTERNAL=",
+					TEST_ALLOC,
+					USE_GCC_ATOMIC_OPS,
+				);
+				INFOPLIST_FILE = "LockFreeAllocatorTester/LockFreeAllocatorTester-Info.plist";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_EXTENSION = app;
+			};
+			name = Debug;
+		};
+		8EA0D34217E1153900A63F1D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GCC_PRECOMPILE_PREFIX_HEADER = YES;
+				GCC_PREFIX_HEADER = "LockFreeAllocatorTester/LockFreeAllocatorTester-Prefix.pch";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"MONO_INTERNAL=",
+					TEST_ALLOC,
+					USE_GCC_ATOMIC_OPS,
+				);
+				INFOPLIST_FILE = "LockFreeAllocatorTester/LockFreeAllocatorTester-Info.plist";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				WRAPPER_EXTENSION = app;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		8EA0D31E17E1153900A63F1D /* Build configuration list for PBXProject "LockFreeAllocatorTester" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8EA0D33E17E1153900A63F1D /* Debug */,
+				8EA0D33F17E1153900A63F1D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8EA0D34017E1153900A63F1D /* Build configuration list for PBXNativeTarget "LockFreeAllocatorTester" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8EA0D34117E1153900A63F1D /* Debug */,
+				8EA0D34217E1153900A63F1D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 8EA0D31B17E1153900A63F1D /* Project object */;
+}

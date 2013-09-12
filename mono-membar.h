@@ -129,9 +129,7 @@ static inline void mono_memory_write_barrier (void)
 #elif defined(__arm__)
 static inline void mono_memory_barrier (void)
 {
-#ifdef HAVE_ARMV6
-	__asm__ __volatile__ ("mcr p15, 0, %0, c7, c10, 5" : : "r" (0) : "memory");
-#endif
+    __sync_synchronize ();
 }
 
 static inline void mono_memory_read_barrier (void)

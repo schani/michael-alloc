@@ -10,7 +10,7 @@ QUEUE = lock-free-queue
 
 OPT = -O0
 
-CFLAGS = $(TEST) $(OPT) -g -Wall -DMONO_INTERNAL= #-DFAILSAFE_DELAYED_FREE
+CFLAGS = $(TEST) $(OPT) -g -Wall -DMONO_INTERNAL= -Dlock_free_allocator_test_main=main #-DFAILSAFE_DELAYED_FREE
 
 all : test
 

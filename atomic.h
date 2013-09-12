@@ -10,6 +10,56 @@
 #ifndef _WAPI_ATOMIC_H_
 #define _WAPI_ATOMIC_H_
 
+#ifdef USE_GCC_ATOMIC_OPS
+
+
+static inline gint32 InterlockedCompareExchange(volatile gint32 *dest,
+                                                gint32 exch, gint32 comp)
+{
+	return __sync_val_compare_and_swap (dest, comp, exch);
+}
+
+static inline gpointer InterlockedCompareExchangePointer(volatile gpointer *dest, gpointer exch, gpointer comp)
+{
+	return __sync_val_compare_and_swap (dest, comp, exch);
+}
+
+static inline gint32 InterlockedIncrement(volatile gint32 *val)
+{
+	return __sync_add_and_fetch (val, 1);
+}
+
+static inline gint32 InterlockedDecrement(volatile gint32 *val)
+{
+	return __sync_add_and_fetch (val, -1);
+}
+
+static inline gint32 InterlockedExchange(volatile gint32 *val, gint32 new_val)
+{
+	gint32 old_val;
+	do {
+		old_val = *val;
+	} while (__sync_val_compare_and_swap (val, old_val, new_val) != old_val);
+	return old_val;
+}
+
+static inline gpointer InterlockedExchangePointer(volatile gpointer *val,
+                                                  gpointer new_val)
+{
+	gpointer old_val;
+	do {
+		old_val = *val;
+	} while (__sync_val_compare_and_swap (val, old_val, new_val) != old_val);
+	return old_val;
+}
+
+static inline gint32 InterlockedExchangeAdd(volatile gint32 *val, gint32 add)
+{
+	return __sync_fetch_and_add (val, add);
+}
+
+#else
+
 #if defined(__NetBSD__)
 #include <sys/param.h>
 
@@ -1301,6 +1351,8 @@ extern gint32 InterlockedExchangeAdd(volatile gint32 *dest, gint32 add);
 
 #if defined(__hppa__)
 #define WAPI_ATOMIC_ASM
+#endif
+
 #endif
 
 #endif
