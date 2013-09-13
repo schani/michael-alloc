@@ -7,9 +7,16 @@
 #include "mono-membar.h"
 #include "delayed-free.h"
 #include "mono-mmap.h"
+#include "lock-free-array-queue.h"
 #include "hazard-pointer.h"
 
 #define mono_pagesize getpagesize
+
+typedef struct {
+	gpointer p;
+	MonoHazardousFreeFunc free_func;
+	gboolean might_lock;
+} DelayedFreeItem;
 
 static struct {
 	long long hazardous_pointer_count;
@@ -36,6 +43,7 @@ static MonoThreadHazardPointers * volatile hazard_table = NULL;
 
 /* The table where we keep pointers to blocks to be freed but that
    have to wait because they're guarded by a hazard pointer. */
+static MonoLockFreeArrayQueue delayed_free_queue = MONO_LOCK_FREE_ARRAY_QUEUE_INIT (sizeof (DelayedFreeItem));
 
 static void*
 mono_gc_alloc_fixed (size_t size, void *dummy)
@@ -201,58 +209,6 @@ mono_hazard_pointer_get (void)
 	return &hazard_table [current_thread->small_id];
 }
 
-static gboolean
-try_free_delayed_free_item (void)
-{
-	MonoDelayedFreeItem item;
-	gboolean popped = mono_delayed_free_pop (&item);
-
-	if (!popped)
-		return FALSE;
-
-	if (is_pointer_hazardous (item.p)) {
-		mono_delayed_free_push (item);
-		return FALSE;
-	}
-
-	item.free_func (item.p);
-
-	return TRUE;
-}
-
-void
-mono_thread_hazardous_free_or_queue (gpointer p, MonoHazardousFreeFunc free_func)
-{
-	int i;
-
-	/* First try to free a few entries in the delayed free
-	   table. */
-	for (i = 0; i < 3; ++i) {
-		if (!try_free_delayed_free_item ())
-			break;
-	}
-
-	mono_memory_barrier ();
-
-	/* Now see if the pointer we're freeing is hazardous.  If it
-	   isn't, free it.  Otherwise put it in the delay list. */
-	if (is_pointer_hazardous (p)) {
-		MonoDelayedFreeItem item = { p, free_func };
-
-		++mono_stats.hazardous_pointer_count;
-
-		mono_delayed_free_push (item);
-	} else
-		free_func (p);
-}
-
-void
-mono_thread_hazardous_try_free_all (void)
-{
-	while (try_free_delayed_free_item ())
-		;
-}
-
 /* Can be called with hp==NULL, in which case it acts as an ordinary
    pointer fetch.  It's used that way indirectly from
    mono_jit_info_table_add(), which doesn't have to care about hazards
@@ -286,6 +242,61 @@ get_hazardous_pointer (gpointer volatile *pp, MonoThreadHazardPointers *hp, int 
 	return p;
 }
 
+static gboolean
+try_free_delayed_free_item (gboolean lock_free_context)
+{
+	DelayedFreeItem item;
+	gboolean popped = mono_lock_free_array_queue_pop (&delayed_free_queue, &item);
+
+	if (!popped)
+		return FALSE;
+
+	if ((lock_free_context && item.might_lock) || (is_pointer_hazardous (item.p))) {
+		mono_lock_free_array_queue_push (&delayed_free_queue, &item);
+		return FALSE;
+	}
+
+	item.free_func (item.p);
+
+	return TRUE;
+}
+
+void
+mono_thread_hazardous_free_or_queue (gpointer p, MonoHazardousFreeFunc free_func,
+		gboolean free_func_might_lock, gboolean lock_free_context)
+{
+	int i;
+
+	if (lock_free_context)
+		g_assert (!free_func_might_lock);
+	if (free_func_might_lock)
+		g_assert (!lock_free_context);
+
+	/* First try to free a few entries in the delayed free
+	   table. */
+	for (i = 0; i < 3; ++i)
+		try_free_delayed_free_item (lock_free_context);
+
+	/* Now see if the pointer we're freeing is hazardous.  If it
+	   isn't, free it.  Otherwise put it in the delay list. */
+	if (is_pointer_hazardous (p)) {
+		DelayedFreeItem item = { p, free_func, free_func_might_lock };
+
+		++mono_stats.hazardous_pointer_count;
+
+		mono_lock_free_array_queue_push (&delayed_free_queue, &item);
+	} else {
+		free_func (p);
+	}
+}
+
+void
+mono_thread_hazardous_try_free_all (void)
+{
+	while (try_free_delayed_free_item (FALSE))
+		;
+}
+
 void
 mono_thread_attach (void)
 {
@@ -303,4 +314,6 @@ void
 mono_thread_hazardous_print_stats (void)
 {
 	g_print ("hazardous pointers: %lld\n", mono_stats.hazardous_pointer_count);
+
+	mono_lock_free_array_queue_cleanup (&delayed_free_queue);
 }

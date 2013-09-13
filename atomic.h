@@ -7,6 +7,8 @@
  * (C) 2002 Ximian, Inc.
  */
 
+#include "fake-glib.h"
+
 #ifndef _WAPI_ATOMIC_H_
 #define _WAPI_ATOMIC_H_
 

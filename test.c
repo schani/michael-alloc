@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <pthread.h>
 
 #include "hazard-pointer.h"
 #include "atomic.h"

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8E9E685917E286EC00D29ABA /* lock-free-array-queue.c in Sources */ = {isa = PBXBuildFile; fileRef = 8E9E685717E286EC00D29ABA /* lock-free-array-queue.c */; };
 		8EA0D32717E1153900A63F1D /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA0D32617E1153900A63F1D /* UIKit.framework */; };
 		8EA0D32917E1153900A63F1D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA0D32817E1153900A63F1D /* Foundation.framework */; };
 		8EA0D32B17E1153900A63F1D /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EA0D32A17E1153900A63F1D /* CoreGraphics.framework */; };
@@ -16,7 +17,6 @@
 		8EA0D33917E1153900A63F1D /* Default.png in Resources */ = {isa = PBXBuildFile; fileRef = 8EA0D33817E1153900A63F1D /* Default.png */; };
 		8EA0D33B17E1153900A63F1D /* Default@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 8EA0D33A17E1153900A63F1D /* Default@2x.png */; };
 		8EA0D33D17E1153900A63F1D /* Default-568h@2x.png in Resources */ = {isa = PBXBuildFile; fileRef = 8EA0D33C17E1153900A63F1D /* Default-568h@2x.png */; };
-		8EA0D35817E1158100A63F1D /* delayed-free.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34517E1158100A63F1D /* delayed-free.c */; };
 		8EA0D35917E1158100A63F1D /* hazard-pointer.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34717E1158100A63F1D /* hazard-pointer.c */; };
 		8EA0D35A17E1158100A63F1D /* lock-free-alloc.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34917E1158100A63F1D /* lock-free-alloc.c */; };
 		8EA0D35B17E1158100A63F1D /* lock-free-queue.c in Sources */ = {isa = PBXBuildFile; fileRef = 8EA0D34B17E1158100A63F1D /* lock-free-queue.c */; };
@@ -27,6 +27,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		8E9E685717E286EC00D29ABA /* lock-free-array-queue.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "lock-free-array-queue.c"; path = "../../lock-free-array-queue.c"; sourceTree = "<group>"; };
+		8E9E685817E286EC00D29ABA /* lock-free-array-queue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "lock-free-array-queue.h"; path = "../../lock-free-array-queue.h"; sourceTree = "<group>"; };
 		8EA0D32317E1153900A63F1D /* LockFreeAllocatorTester.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LockFreeAllocatorTester.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8EA0D32617E1153900A63F1D /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		8EA0D32817E1153900A63F1D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -42,7 +44,6 @@
 		8EA0D33C17E1153900A63F1D /* Default-568h@2x.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "Default-568h@2x.png"; sourceTree = "<group>"; };
 		8EA0D34317E1158100A63F1D /* alloc.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = alloc.h; path = ../../alloc.h; sourceTree = "<group>"; };
 		8EA0D34417E1158100A63F1D /* atomic.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = atomic.h; path = ../../atomic.h; sourceTree = "<group>"; };
-		8EA0D34517E1158100A63F1D /* delayed-free.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "delayed-free.c"; path = "../../delayed-free.c"; sourceTree = "<group>"; };
 		8EA0D34617E1158100A63F1D /* delayed-free.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "delayed-free.h"; path = "../../delayed-free.h"; sourceTree = "<group>"; };
 		8EA0D34717E1158100A63F1D /* hazard-pointer.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = "hazard-pointer.c"; path = "../../hazard-pointer.c"; sourceTree = "<group>"; };
 		8EA0D34817E1158100A63F1D /* hazard-pointer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = "hazard-pointer.h"; path = "../../hazard-pointer.h"; sourceTree = "<group>"; };
@@ -105,9 +106,10 @@
 		8EA0D32C17E1153900A63F1D /* LockFreeAllocatorTester */ = {
 			isa = PBXGroup;
 			children = (
+				8E9E685717E286EC00D29ABA /* lock-free-array-queue.c */,
+				8E9E685817E286EC00D29ABA /* lock-free-array-queue.h */,
 				8EA0D34317E1158100A63F1D /* alloc.h */,
 				8EA0D34417E1158100A63F1D /* atomic.h */,
-				8EA0D34517E1158100A63F1D /* delayed-free.c */,
 				8EA0D34617E1158100A63F1D /* delayed-free.h */,
 				8EA0D34717E1158100A63F1D /* hazard-pointer.c */,
 				8EA0D34817E1158100A63F1D /* hazard-pointer.h */,
@@ -213,7 +215,6 @@
 			files = (
 				8EA0D33317E1153900A63F1D /* main.m in Sources */,
 				8EA0D33717E1153900A63F1D /* XAMAppDelegate.m in Sources */,
-				8EA0D35817E1158100A63F1D /* delayed-free.c in Sources */,
 				8EA0D35917E1158100A63F1D /* hazard-pointer.c in Sources */,
 				8EA0D35A17E1158100A63F1D /* lock-free-alloc.c in Sources */,
 				8EA0D35B17E1158100A63F1D /* lock-free-queue.c in Sources */,
@@ -221,6 +222,7 @@
 				8EA0D35D17E1158100A63F1D /* mono-mmap.c in Sources */,
 				8EA0D35E17E1158100A63F1D /* sgen-gc.c in Sources */,
 				8EA0D36017E1158100A63F1D /* test.c in Sources */,
+				8E9E685917E286EC00D29ABA /* lock-free-array-queue.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

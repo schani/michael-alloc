@@ -1,9 +1,13 @@
-#ifndef __MONO_UTILS_HAZARD_H__
-#define __MONO_UTILS_HAZARD_H__
+/*
+ * hazard-pointer.h: Hazard pointer related code.
+ *
+ * (C) Copyright 2011 Novell, Inc
+ */
+#ifndef __MONO_HAZARD_POINTER_H__
+#define __MONO_HAZARD_POINTER_H__
 
 #include "fake-glib.h"
 
-#include "delayed-free.h"
 #include "mono-membar.h"
 
 #define HAZARD_POINTER_COUNT 3
@@ -12,10 +16,13 @@ typedef struct {
 	gpointer hazard_pointers [HAZARD_POINTER_COUNT];
 } MonoThreadHazardPointers;
 
-void mono_thread_hazardous_free_or_queue (gpointer p, MonoHazardousFreeFunc free_func);
-void mono_thread_hazardous_try_free_all (void);
-MonoThreadHazardPointers* mono_hazard_pointer_get (void);
-gpointer get_hazardous_pointer (gpointer volatile *pp, MonoThreadHazardPointers *hp, int hazard_index);
+typedef void (*MonoHazardousFreeFunc) (gpointer p);
+
+void mono_thread_hazardous_free_or_queue (gpointer p, MonoHazardousFreeFunc free_func,
+		gboolean free_func_might_lock, gboolean lock_free_context) MONO_INTERNAL;
+void mono_thread_hazardous_try_free_all (void) MONO_INTERNAL;
+MonoThreadHazardPointers* mono_hazard_pointer_get (void) MONO_INTERNAL;
+gpointer get_hazardous_pointer (gpointer volatile *pp, MonoThreadHazardPointers *hp, int hazard_index) MONO_INTERNAL;
 
 #define mono_hazard_pointer_set(hp,i,v)	\
 	do { g_assert ((i) >= 0 && (i) < HAZARD_POINTER_COUNT); \
@@ -33,7 +40,9 @@ gpointer get_hazardous_pointer (gpointer volatile *pp, MonoThreadHazardPointers 
 
 void mono_thread_attach (void);
 
-void mono_thread_smr_init (void);
-void mono_thread_hazardous_print_stats (void);
+void mono_thread_smr_init (void) MONO_INTERNAL;
+void mono_thread_smr_cleanup (void) MONO_INTERNAL;
 
-#endif
+void mono_thread_hazardous_print_stats (void) MONO_INTERNAL;
+
+#endif /*__MONO_HAZARD_POINTER_H__*/
