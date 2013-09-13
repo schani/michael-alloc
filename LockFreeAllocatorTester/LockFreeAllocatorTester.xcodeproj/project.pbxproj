@@ -310,6 +310,7 @@
 					TEST_ALLOC,
 					USE_GCC_ATOMIC_OPS,
 				);
+				GCC_VERSION = com.apple.compilers.llvmgcc42;
 				INFOPLIST_FILE = "LockFreeAllocatorTester/LockFreeAllocatorTester-Info.plist";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = app;
@@ -326,6 +327,7 @@
 					TEST_ALLOC,
 					USE_GCC_ATOMIC_OPS,
 				);
+				GCC_VERSION = com.apple.compilers.llvmgcc42;
 				INFOPLIST_FILE = "LockFreeAllocatorTester/LockFreeAllocatorTester-Info.plist";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = app;
@@ -351,6 +353,7 @@
 				8EA0D34217E1153900A63F1D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};

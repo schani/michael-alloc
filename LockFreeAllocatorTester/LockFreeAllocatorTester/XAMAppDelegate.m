@@ -12,6 +12,8 @@ extern int lock_free_allocator_test_main (void);
 
 @implementation XAMAppDelegate
 
+@synthesize window;
+
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
     self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
@@ -20,7 +22,9 @@ extern int lock_free_allocator_test_main (void);
     [self.window makeKeyAndVisible];
     
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        lock_free_allocator_test_main ();
+        for (;;) {
+            lock_free_allocator_test_main ();
+        }
     });
     
     return YES;
